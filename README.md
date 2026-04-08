@@ -1,6 +1,6 @@
-# MCP Peer Reviewer
+# DUUL
 
-MCP server that uses LLMs as peer reviewers for development plans and code. Supports OpenAI, Anthropic, Google, OpenRouter, and any OpenAI-compatible provider.
+**D**ual-phase **U**pfront-plan & **U**nit-verify **L**oop — an MCP server that uses LLMs as peer reviewers for development plans and code. Supports OpenAI, Anthropic, Google, OpenRouter, and any OpenAI-compatible provider.
 
 > [한국어 README](./README.ko.md)
 
@@ -8,10 +8,10 @@ MCP server that uses LLMs as peer reviewers for development plans and code. Supp
 
 ## Overview
 
-MCP Peer Reviewer is a [Model Context Protocol](https://modelcontextprotocol.io/) server that enables any MCP client (such as Claude Desktop or Claude Code) to request structured peer reviews from external LLMs. It implements a **2-phase review loop**:
+DUUL is a [Model Context Protocol](https://modelcontextprotocol.io/) server that enables any MCP client (such as Claude Desktop or Claude Code) to request structured peer reviews from external LLMs. It implements a **2-phase review loop**:
 
-1. **Plan Review** -- A Senior Architect persona reviews the implementation plan before any code is written.
-2. **Code Review** -- A Strict QA Engineer persona reviews the code against the approved plan.
+1. **Upfront-plan Review** -- A Senior Architect persona reviews the implementation plan before any code is written.
+2. **Unit-verify Review** -- A Strict QA Engineer persona reviews the code against the approved plan.
 
 The calling agent iterates with the reviewer on each phase until it receives an `APPROVE` verdict, then moves to the next phase. This creates a cross-model peer review workflow where one LLM checks the work of another. Each phase has a configurable iteration limit (default: 7) to prevent runaway loops.
 
@@ -23,7 +23,7 @@ The reviewer has **workspace-aware file exploration** -- when given a `workspace
 
 ```mermaid
 flowchart TD
-    Start(["User: 'peer review this'"]):::trigger --> Plan["Write implementation plan"]
+    Start(["User: 'run DUUL'"]):::trigger --> Plan["Write implementation plan"]
 
     subgraph Phase1["Phase 1: Plan Ping-Pong (max 7 iterations)"]
         Plan --> PR["request_plan_review"]
@@ -130,13 +130,13 @@ flowchart LR
     Cap -- "degraded (Anthropic/Google)" --> Degraded["JSON prompt + zod validate\nNo tool calling\nNo conversation context"]
 ```
 
-## Triggering the Review Loop
+## Triggering DUUL
 
-The peer review loop is activated by **natural language** -- just ask in conversation. The server embeds workflow instructions that the MCP client picks up automatically.
+The DUUL loop is activated by **natural language** -- just ask in conversation. The server embeds workflow instructions that the MCP client picks up automatically.
 
 **Trigger examples:**
-- "피어 리뷰 해줘", "사수 리뷰 받자", "리뷰 루프 시작"
-- "peer review this", "run the review loop", "get a peer review"
+- "DUUL 돌려", "듀울 리뷰 해줘", "듀울 시작", "사수 리뷰 받자", "리뷰 루프 시작"
+- "run DUUL", "DUUL review this", "start the DUUL loop", "get a DUUL review"
 
 **Not triggers** (these are normal requests the agent handles itself):
 - "review my code", "check this", "look over my plan"
@@ -145,7 +145,7 @@ The peer review loop is activated by **natural language** -- just ask in convers
 
 ### `request_plan_review` -- The Architect
 
-Submit a development plan for peer review by an LLM acting as a Senior Software Architect.
+DUUL Phase 1: Submit a development plan for review by an LLM acting as a Senior Software Architect.
 
 **Input Schema:**
 
@@ -207,7 +207,7 @@ Submit a development plan for peer review by an LLM acting as a Senior Software 
 
 ### `request_code_review` -- The Debugger
 
-Submit code for peer review by an LLM acting as a Strict QA Engineer. Requires the previously approved plan.
+DUUL Phase 2: Submit code for review by an LLM acting as a Strict QA Engineer. Requires the previously approved plan.
 
 **Input Schema:**
 
@@ -400,7 +400,7 @@ The MCP server returns structured data. The calling agent (e.g., Claude) should 
 
 ```bash
 git clone <repository-url>
-cd mcp-peer-reviewer
+cd duul
 npm install
 npm run build
 ```
@@ -427,9 +427,9 @@ Add the following to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "peer-reviewer": {
+    "duul": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-peer-reviewer/build/index.js"],
+      "args": ["/absolute/path/to/duul/build/index.js"],
       "env": {
         "OPENAI_API_KEY": "sk-...",
         "REVIEW_PROVIDER": "openai"
@@ -444,9 +444,9 @@ Add the following to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "peer-reviewer": {
+    "duul": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-peer-reviewer/build/index.js"],
+      "args": ["/absolute/path/to/duul/build/index.js"],
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-...",
         "REVIEW_PROVIDER": "anthropic"
@@ -456,16 +456,16 @@ Add the following to your `claude_desktop_config.json`:
 }
 ```
 
-Replace `/absolute/path/to/mcp-peer-reviewer` with the actual path to this project on your system.
+Replace `/absolute/path/to/duul` with the actual path to this project on your system.
 
 ## Usage with Claude Code
 
 Configure via the CLI:
 
 ```bash
-claude mcp add peer-reviewer \
+claude mcp add duul \
   -e OPENAI_API_KEY=sk-... \
-  -- node /absolute/path/to/mcp-peer-reviewer/build/index.js
+  -- node /absolute/path/to/duul/build/index.js
 ```
 
 Or add manually to your project-level `.mcp.json`:
@@ -473,9 +473,9 @@ Or add manually to your project-level `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "peer-reviewer": {
+    "duul": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-peer-reviewer/build/index.js"],
+      "args": ["/absolute/path/to/duul/build/index.js"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
@@ -484,7 +484,7 @@ Or add manually to your project-level `.mcp.json`:
 }
 ```
 
-Once installed, just ask in natural language: **"peer review this"** or **"피어 리뷰 해줘"**.
+Once installed, just ask in natural language: **"run DUUL"** or **"듀울 돌려"**.
 
 ## Architecture
 

@@ -256,7 +256,7 @@ export class OpenAIProvider implements ReviewerProvider {
       ...(previousReviewId ? { previous_response_id: previousReviewId } : {}),
     });
 
-    console.error(`[peer-reviewer] response.id=${response.id} model=${this.model} provider=openai`);
+    console.error(`[duul] response.id=${response.id} model=${this.model} provider=openai`);
 
     // Agentic tool-calling loop
     if (effectiveRoot) {
@@ -296,7 +296,7 @@ export class OpenAIProvider implements ReviewerProvider {
         if (functionCalls.length === 0) break;
 
         const strategyLevel = getStrategyLevel();
-        console.error(`[peer-reviewer] Tool round ${round + 1}: ${functionCalls.length} call(s), budget ${accumulatedToolChars}/${toolReadBudget} (level ${strategyLevel})`);
+        console.error(`[duul] Tool round ${round + 1}: ${functionCalls.length} call(s), budget ${accumulatedToolChars}/${toolReadBudget} (level ${strategyLevel})`);
 
         const toolResults: Array<{ type: 'function_call_output'; call_id: string; output: string }> = [];
 
@@ -330,12 +330,12 @@ export class OpenAIProvider implements ReviewerProvider {
           allUsedTools.push(`${call.name}(${argSummary})`);
           accumulatedToolChars += result.length;
 
-          console.error(`[peer-reviewer]   ${call.name}(${argSummary}) -> ${result.length} chars (total: ${accumulatedToolChars}/${toolReadBudget}, level ${getStrategyLevel()})`);
+          console.error(`[duul]   ${call.name}(${argSummary}) -> ${result.length} chars (total: ${accumulatedToolChars}/${toolReadBudget}, level ${getStrategyLevel()})`);
           toolResults.push({ type: 'function_call_output' as const, call_id: call.call_id, output: result });
         }
 
         response = await this.apiCallWithRetry({ ...baseParams, previous_response_id: response.id, input: toolResults });
-        console.error(`[peer-reviewer] response.id=${response.id} (after tool round ${round + 1})`);
+        console.error(`[duul] response.id=${response.id} (after tool round ${round + 1})`);
 
         if (getStrategyLevel() >= 3 && this.hasPendingFunctionCalls(response)) {
           const stopResults = this.getFunctionCalls(response).filter((c) => c.type === 'function_call').map((c) => ({
@@ -366,7 +366,7 @@ export class OpenAIProvider implements ReviewerProvider {
     if (options.createFallback) {
       const reason: ExhaustionReason = this.hasPendingFunctionCalls(response) ? 'round_limit' : 'budget';
       const fallback = options.createFallback(reason, allUsedTools);
-      console.error(`[peer-reviewer] Returning structured fallback (reason: ${reason}).`);
+      console.error(`[duul] Returning structured fallback (reason: ${reason}).`);
       return { parsed: fallback, reviewId: response.id };
     }
 
@@ -389,7 +389,7 @@ export class OpenAIProvider implements ReviewerProvider {
         const isRetryable = error instanceof Error && ('status' in error ? ((error as { status: number }).status === 429 || (error as { status: number }).status >= 500) : error.name === 'AbortError');
         if (isRetryable && attempt < MAX_RETRIES - 1) {
           const delay = 1000 * Math.pow(2, attempt);
-          console.error(`[peer-reviewer] Retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms`);
+          console.error(`[duul] Retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms`);
           await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
         }

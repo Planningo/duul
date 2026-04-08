@@ -14,9 +14,9 @@ export function registerCodeReviewTool(server: McpServer): void {
   server.registerTool(
     'request_code_review',
     {
-      title: 'Code Review (Codex Strict QA)',
+      title: 'DUUL Code Review (Strict QA)',
       description:
-        'Submit code for peer review by Codex acting as a Strict QA Engineer. ' +
+        'DUUL Phase 2: Submit code for review by an LLM acting as a Strict QA Engineer. ' +
         'Requires the approved plan for context. Returns blocking issues, vulnerabilities, ' +
         'and optionally an optimized code snippet, or approval.',
       inputSchema: CodeReviewInputSchema,
@@ -30,7 +30,7 @@ export function registerCodeReviewTool(server: McpServer): void {
         // Short-circuit if iteration limit exceeded
         if (isIterationLimitExceeded('code', args.iteration_count, args.max_review_iterations)) {
           console.error(
-            `[peer-reviewer] Code review iteration limit exceeded: ${args.iteration_count} > ${iterMeta.iteration_limit}`,
+            `[duul] Code review iteration limit exceeded: ${args.iteration_count} > ${iterMeta.iteration_limit}`,
           );
           const limitResult = {
             verdict: 'REVISE' as const,
@@ -120,7 +120,7 @@ export function registerCodeReviewTool(server: McpServer): void {
         };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`[peer-reviewer] code-review error: ${message}`);
+        console.error(`[duul] code-review error: ${message}`);
         return {
           content: [{ type: 'text' as const, text: `Code review failed: ${message}` }],
           isError: true,

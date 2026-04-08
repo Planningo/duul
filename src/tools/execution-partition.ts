@@ -14,9 +14,9 @@ export function registerExecutionPartitionTool(server: McpServer): void {
   server.registerTool(
     'request_execution_partition',
     {
-      title: 'Execution Partition (Codex Project Manager)',
+      title: 'DUUL Execution Partition (Project Manager)',
       description:
-        'Partition an approved plan into executable subtasks with dependency graph, ' +
+        'DUUL optional: Partition an approved plan into executable subtasks with dependency graph, ' +
         'spawn strategy, and handoff contracts. Use after plan review approval to ' +
         'determine whether work can be parallelized across multiple agents/workspaces.',
       inputSchema: ExecutionPartitionInputSchema,
@@ -30,7 +30,7 @@ export function registerExecutionPartitionTool(server: McpServer): void {
         // Short-circuit if iteration limit exceeded
         if (isIterationLimitExceeded('partition', args.iteration_count, args.max_review_iterations)) {
           console.error(
-            `[peer-reviewer] Partition iteration limit exceeded: ${args.iteration_count} > ${iterMeta.iteration_limit}`,
+            `[duul] Partition iteration limit exceeded: ${args.iteration_count} > ${iterMeta.iteration_limit}`,
           );
           const limitResult = {
             execution_mode: 'serial' as const,
@@ -150,7 +150,7 @@ export function registerExecutionPartitionTool(server: McpServer): void {
         };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`[peer-reviewer] execution-partition error: ${message}`);
+        console.error(`[duul] execution-partition error: ${message}`);
         return {
           content: [{ type: 'text' as const, text: `Execution partition failed: ${message}` }],
           isError: true,

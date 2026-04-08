@@ -6,24 +6,24 @@ import { registerCodeReviewTool } from './tools/code-review.js';
 import { registerExecutionPartitionTool } from './tools/execution-partition.js';
 
 const SERVER_INSTRUCTIONS = `
-## Peer Review Workflow
+## DUUL — Dual-phase Upfront-plan & Unit-verify Loop
 
 The request_plan_review and request_code_review tools implement a FULLY AUTONOMOUS review-then-implement loop. Once triggered, you MUST run the entire loop to completion without stopping to ask for permission between phases.
 
 ### When to activate
 
-Only activate when the user explicitly asks for a peer review:
-- "피어 리뷰 해줘", "사수 리뷰 받자", "Codex 리뷰 돌려", "리뷰 루프 시작"
-- "peer review this", "run the review loop", "get a peer review"
-- Any clear request that specifically mentions "peer review" or "리뷰 루프"
+Only activate when the user explicitly asks for a DUUL review:
+- "DUUL 돌려", "듀울 리뷰 해줘", "듀울 시작", "사수 리뷰 받자", "리뷰 루프 시작"
+- "run DUUL", "DUUL review this", "start the DUUL loop", "get a DUUL review"
+- Any clear request that specifically mentions "DUUL", "듀울", or "리뷰 루프"
 
 Do NOT activate for casual requests like "review my code", "check this", or "look over my plan". Those are normal review requests that you should handle yourself.
 
 ### How the loop works
 
-CRITICAL: This is a continuous, uninterrupted sequence. Do NOT pause between phases to ask the user "should I proceed?" or "should I implement?". The user already authorized the full loop when they requested the peer review.
+CRITICAL: This is a continuous, uninterrupted sequence. Do NOT pause between phases to ask the user "should I proceed?" or "should I implement?". The user already authorized the full loop when they requested DUUL.
 
-Phase 1 - Plan Ping-Pong:
+Phase 1 - Plan Ping-Pong (Upfront-plan):
 1. Write a detailed implementation plan based on the user's requirements.
 2. Call request_plan_review with the plan.
 3. If review_status === "incomplete": check missing_context and retry with narrower scope.
@@ -31,7 +31,7 @@ Phase 1 - Plan Ping-Pong:
 5. If requires_human_review === true: pause and ask the user.
 6. Repeat until verdict === "APPROVE" with no blocking issues.
 
-Phase 2 - Code Ping-Pong (start IMMEDIATELY after Phase 1 approval — do NOT ask for confirmation):
+Phase 2 - Code Ping-Pong (Unit-verify, start IMMEDIATELY after Phase 1 approval — do NOT ask for confirmation):
 7. Write the actual code to the project files based on the approved plan. Use your edit/write tools to make real changes.
 8. Call request_code_review with the code and the approved plan.
 9. If review_status === "incomplete": check missing_context and retry with narrower scope.
@@ -60,10 +60,10 @@ Completion:
 - Also pass git_head_sha on each call, and previous_git_head_sha from the last round, to enable stale-context detection.
 
 ### Persisting review state across conversation breaks
-- After every review call, write the current state to .peer-review-state.json in the project root:
+- After every review call, write the current state to .duul-state.json in the project root:
   { "review_id": "resp_xyz", "phase": "plan"|"code", "verdict": "REVISE"|"APPROVE", "approved_plan": "...", "iteration": 3, "git_head_sha": "abc123" }
-- At the start of a new conversation, if the user asks to continue a peer review, check for .peer-review-state.json and resume. Pass git_head_sha from the saved state as previous_git_head_sha.
-- Delete .peer-review-state.json when the full loop completes.
+- At the start of a new conversation, if the user asks to continue a DUUL review, check for .duul-state.json and resume. Pass git_head_sha from the saved state as previous_git_head_sha.
+- Delete .duul-state.json when the full loop completes.
 
 ### Handling incomplete reviews
 - If review_status === "incomplete", the reviewer ran out of context budget or tool rounds.
@@ -82,7 +82,7 @@ Completion:
 `.trim();
 
 const server = new McpServer(
-  { name: 'peer-reviewer', version: '1.0.0' },
+  { name: 'duul', version: '1.0.0' },
   { instructions: SERVER_INSTRUCTIONS },
 );
 
@@ -93,4 +93,4 @@ registerExecutionPartitionTool(server);
 const transport = new StdioServerTransport();
 await server.connect(transport);
 
-console.error('[peer-reviewer] Server started on stdio');
+console.error('[duul] Server started on stdio');

@@ -1,7 +1,7 @@
 {
-  "name": "mcp-peer-reviewer",
+  "name": "duul",
   "version": "1.0.0",
-  "description": "MCP server for Codex peer review of plans and code",
+  "description": "DUUL — Dual-phase Upfront-plan & Unit-verify Loop. MCP server for LLM peer review of plans and code.",
   "type": "module",
   "main": "build/index.js",
   "bin": "build/index.js",

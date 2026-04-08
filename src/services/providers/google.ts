@@ -78,7 +78,7 @@ export class GoogleProvider implements ReviewerProvider {
           const status = response.status;
           if ((status === 429 || status >= 500) && attempt < MAX_RETRIES - 1) {
             const delay = 1000 * Math.pow(2, attempt);
-            console.error(`[peer-reviewer] Google retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms (status ${status})`);
+            console.error(`[duul] Google retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms (status ${status})`);
             await new Promise((resolve) => setTimeout(resolve, delay));
             continue;
           }
@@ -107,7 +107,7 @@ export class GoogleProvider implements ReviewerProvider {
         clearTimeout(timeout);
         if (attempt < MAX_RETRIES - 1 && error instanceof Error && error.name === 'AbortError') {
           const delay = 1000 * Math.pow(2, attempt);
-          console.error(`[peer-reviewer] Google retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms (timeout)`);
+          console.error(`[duul] Google retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms (timeout)`);
           await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
         }

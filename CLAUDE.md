@@ -1,22 +1,22 @@
-# Peer Review Workflow
+# DUUL — Dual-phase Upfront-plan & Unit-verify Loop
 
 ## When to activate
 
 The `request_plan_review` and `request_code_review` tools implement a **FULLY AUTONOMOUS review-then-implement loop**. Once triggered, you **MUST** run the entire loop to completion without stopping to ask for permission between phases.
 
-Only activate when the user explicitly asks for a peer review:
+Only activate when the user explicitly asks for a DUUL review:
 
-- "피어 리뷰 해줘", "사수 리뷰 받자", "Codex 리뷰 돌려", "리뷰 루프 시작"
-- "peer review this", "run the review loop", "get a peer review"
-- Any clear request that specifically mentions "peer review" or "리뷰 루프"
+- "DUUL 돌려", "듀울 리뷰 해줘", "듀울 시작", "사수 리뷰 받자", "리뷰 루프 시작"
+- "run DUUL", "DUUL review this", "start the DUUL loop", "get a DUUL review"
+- Any clear request that specifically mentions "DUUL", "듀울", or "리뷰 루프"
 
 **Do NOT activate for casual requests** like "review my code", "check this", or "look over my plan". Those are normal review requests that you should handle yourself.
 
 ## How the loop works
 
-**CRITICAL:** This is a continuous, uninterrupted sequence. Do **NOT** pause between phases to ask the user "should I proceed?" or "should I implement?". The user already authorized the full loop when they requested the peer review.
+**CRITICAL:** This is a continuous, uninterrupted sequence. Do **NOT** pause between phases to ask the user "should I proceed?" or "should I implement?". The user already authorized the full loop when they requested DUUL.
 
-### Phase 1: Plan Ping-Pong
+### Phase 1: Upfront-plan Ping-Pong
 1. Write a detailed implementation plan based on the user's requirements.
 2. Call `request_plan_review` with the plan.
 3. If `review_status === "incomplete"`: check `missing_context` and retry with narrower scope.
@@ -24,7 +24,7 @@ Only activate when the user explicitly asks for a peer review:
 5. If `requires_human_review === true`: pause and ask the user.
 6. Repeat until `verdict === "APPROVE"` with no blocking issues.
 
-### Phase 2: Code Ping-Pong (start IMMEDIATELY after Phase 1 approval — do NOT ask for confirmation)
+### Phase 2: Unit-verify Ping-Pong (start IMMEDIATELY after Phase 1 approval — do NOT ask for confirmation)
 7. **Write the actual code** to the project files based on the approved plan. Use your edit/write tools to make real changes.
 8. Call `request_code_review` with the code and the approved plan.
 9. If `review_status === "incomplete"`: check `missing_context` and retry with narrower scope.
@@ -63,7 +63,7 @@ Only activate when the user explicitly asks for a peer review:
 
 If a conversation is interrupted mid-review (context limit, crash, user closes session), the review context can be resumed in a new conversation:
 
-1. **After every review call**, write the current state to `.peer-review-state.json` in the project root:
+1. **After every review call**, write the current state to `.duul-state.json` in the project root:
    ```json
    {
      "review_id": "resp_xyz",
@@ -74,14 +74,14 @@ If a conversation is interrupted mid-review (context limit, crash, user closes s
      "git_head_sha": "abc123"
    }
    ```
-2. **At the start of a new conversation**, if the user asks to continue a peer review (e.g., "리뷰 이어서 해줘", "continue the peer review"), check for `.peer-review-state.json` in the project root.
+2. **At the start of a new conversation**, if the user asks to continue DUUL (e.g., "듀울 이어서 해줘", "continue DUUL"), check for `.duul-state.json` in the project root.
 3. If it exists, read it and resume:
    - Pass `previous_review_id` from the saved `review_id` to maintain reviewer context.
    - Pass `git_head_sha` from the saved state as `previous_git_head_sha`.
-   - If `phase === "plan"` and `verdict === "REVISE"`: continue Plan Ping-Pong.
+   - If `phase === "plan"` and `verdict === "REVISE"`: continue Upfront-plan Ping-Pong.
    - If `phase === "plan"` and `verdict === "APPROVE"`: start Phase 2 immediately with the saved `approved_plan`.
-   - If `phase === "code"`: continue Code Ping-Pong with the saved `approved_plan`.
-4. **Delete `.peer-review-state.json`** when the full loop completes (both phases approved).
+   - If `phase === "code"`: continue Unit-verify Ping-Pong with the saved `approved_plan`.
+4. **Delete `.duul-state.json`** when the full loop completes (both phases approved).
 
 ### Handling incomplete reviews
 

@@ -39,7 +39,7 @@ function resolveProviderName(configProvider?: string): ProviderName {
   const name = configProvider ?? process.env.REVIEW_PROVIDER ?? 'openai';
   const valid: ProviderName[] = ['openai', 'anthropic', 'google', 'openrouter', 'compatible'];
   if (!valid.includes(name as ProviderName)) {
-    console.error(`[peer-reviewer] Unknown provider "${name}", falling back to openai`);
+    console.error(`[duul] Unknown provider "${name}", falling back to openai`);
     return 'openai';
   }
   return name as ProviderName;
@@ -152,13 +152,13 @@ function getProvider(reviewerConfig?: ReviewOptions<z.ZodType>['reviewerConfig']
     if (providerCache.size >= MAX_CACHE_SIZE) {
       const oldestKey = providerCache.keys().next().value!;
       providerCache.delete(oldestKey);
-      console.error(`[peer-reviewer] Provider cache full, evicted oldest entry`);
+      console.error(`[duul] Provider cache full, evicted oldest entry`);
     }
     const cacheKey = getProviderCacheKey(providerName, reviewerConfig);
     providerCache.set(cacheKey, provider);
   }
 
-  console.error(`[peer-reviewer] Created ${providerName} provider (model: ${reviewerConfig?.model ?? 'default'}${hasEphemeralKey ? ', ephemeral key' : ''})`);
+  console.error(`[duul] Created ${providerName} provider (model: ${reviewerConfig?.model ?? 'default'}${hasEphemeralKey ? ', ephemeral key' : ''})`);
   return provider;
 }
 
@@ -174,13 +174,13 @@ export async function callReview<T extends z.ZodType>(
   // Log capability warnings for non-full-featured providers
   if (!provider.capabilities.toolCalling && options.workspaceScope?.root) {
     console.error(
-      `[peer-reviewer] Warning: ${provider.name} provider does not support tool calling. ` +
+      `[duul] Warning: ${provider.name} provider does not support tool calling. ` +
         'Reviewer will not be able to explore the workspace. Consider providing more context via relevant_code/artifact_refs.',
     );
   }
   if (!provider.capabilities.previousResponseId && options.previousReviewId) {
     console.error(
-      `[peer-reviewer] Warning: ${provider.name} provider does not support previous_response_id. ` +
+      `[duul] Warning: ${provider.name} provider does not support previous_response_id. ` +
         'Reviewer context from previous rounds will not be available.',
     );
   }

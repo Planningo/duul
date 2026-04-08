@@ -204,12 +204,12 @@ export function resolveWorkspaceScope(input: {
 
   if (input.workspace_root && input.project_root) {
     console.error(
-      '[peer-reviewer] Warning: both workspace_root and project_root provided. ' +
+      '[duul] Warning: both workspace_root and project_root provided. ' +
         'Using workspace_root. project_root is deprecated.',
     );
   } else if (!input.workspace_root && input.project_root) {
     console.error(
-      '[peer-reviewer] Deprecation: project_root is deprecated, use workspace_root instead.',
+      '[duul] Deprecation: project_root is deprecated, use workspace_root instead.',
     );
   }
 

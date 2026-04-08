@@ -14,9 +14,9 @@ export function registerPlanReviewTool(server: McpServer): void {
   server.registerTool(
     'request_plan_review',
     {
-      title: 'Plan Review (Codex Senior Architect)',
+      title: 'DUUL Plan Review (Senior Architect)',
       description:
-        'Submit a development plan for peer review by Codex acting as a Senior Architect. ' +
+        'DUUL Phase 1: Submit a development plan for review by an LLM acting as a Senior Architect. ' +
         'Returns structured feedback with blocking issues, edge cases, and implementation checklist, or approval.',
       inputSchema: PlanReviewInputSchema,
       outputSchema: PlanReviewMcpOutputSchema,
@@ -29,7 +29,7 @@ export function registerPlanReviewTool(server: McpServer): void {
         // Short-circuit if iteration limit exceeded
         if (isIterationLimitExceeded('plan', args.iteration_count, args.max_review_iterations)) {
           console.error(
-            `[peer-reviewer] Plan review iteration limit exceeded: ${args.iteration_count} > ${iterMeta.iteration_limit}`,
+            `[duul] Plan review iteration limit exceeded: ${args.iteration_count} > ${iterMeta.iteration_limit}`,
           );
           const limitResult = {
             verdict: 'REVISE' as const,
@@ -123,7 +123,7 @@ export function registerPlanReviewTool(server: McpServer): void {
         };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`[peer-reviewer] plan-review error: ${message}`);
+        console.error(`[duul] plan-review error: ${message}`);
         return {
           content: [{ type: 'text' as const, text: `Plan review failed: ${message}` }],
           isError: true,
