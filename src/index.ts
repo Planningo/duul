@@ -77,7 +77,7 @@ Completion:
 - Always pass the full approved plan text as approved_plan in Phase 2.
 - Do not skip Phase 1. Even if the user provides code directly, write a plan first.
 - Do NOT stop early just because you've iterated a few times. If the reviewer says REVISE, you MUST fix and resubmit. The loop ends ONLY when the reviewer returns APPROVE, not when you feel "enough" iterations have passed.
-- If the loop exceeds 7 iterations on either phase, pause and ask the user whether to continue.
+- If the loop exceeds the iteration limit (plan: 7, code: 7, partition: 5 by default), pause and ask the user whether to continue.
 `.trim();
 
 const server = new McpServer(

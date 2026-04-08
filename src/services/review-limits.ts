@@ -43,6 +43,14 @@ export interface IterationMeta {
 /**
  * Compute iteration metadata for a tool response.
  * Returns the metadata to merge into the MCP output.
+ *
+ * `iteration_limit_reached` is true when `count > limit`, meaning the current
+ * call was short-circuited (not sent to the reviewer). This matches the
+ * semantics of `isIterationLimitExceeded`.
+ *
+ * When `count === limit`, the review still runs (last allowed iteration),
+ * and `iteration_limit_reached` is false. The caller should note that the
+ * NEXT call will be blocked.
  */
 export function computeIterationMeta(
   phase: ReviewPhase,
@@ -54,13 +62,17 @@ export function computeIterationMeta(
   return {
     iteration_count: count,
     iteration_limit: limit,
-    iteration_limit_reached: count >= limit,
+    iteration_limit_reached: count > limit,
   };
 }
 
 /**
- * Check if iteration limit is reached BEFORE calling the reviewer.
- * If reached, the tool should short-circuit and return requires_human_review: true.
+ * Check if iteration limit is exceeded BEFORE calling the reviewer.
+ * Returns true when `count > limit` — the call should be short-circuited
+ * with `requires_human_review: true`.
+ *
+ * When `count === limit`, this returns false — the review still runs
+ * (last allowed iteration).
  */
 export function isIterationLimitExceeded(
   phase: ReviewPhase,

@@ -13,7 +13,7 @@ DUUL is a [Model Context Protocol](https://modelcontextprotocol.io/) server that
 1. **Upfront-plan Review** -- A Senior Architect persona reviews the implementation plan before any code is written.
 2. **Unit-verify Review** -- A Strict QA Engineer persona reviews the code against the approved plan.
 
-The calling agent iterates with the reviewer on each phase until it receives an `APPROVE` verdict, then moves to the next phase. This creates a cross-model peer review workflow where one LLM checks the work of another. Each phase has a configurable iteration limit (default: 7) to prevent runaway loops.
+The calling agent iterates with the reviewer on each phase until it receives an `APPROVE` verdict, then moves to the next phase. This creates a cross-model peer review workflow where one LLM checks the work of another. Each phase has a configurable iteration limit (plan/code: 7, partition: 5) to prevent runaway loops.
 
 The reviewer has **workspace-aware file exploration** -- when given a `workspace_root`, it can autonomously browse the codebase using 7 built-in tools (read files, search code, list directories, etc.) to make informed review decisions instead of speculating.
 
@@ -342,19 +342,22 @@ Each review request can include a `reviewer_config` object to override the defau
 | `provider` | `string` | Provider to use: `openai`, `anthropic`, `google`, `openrouter`, `compatible` |
 | `model` | `string` | Model identifier (provider-specific) |
 | `base_url` | `string` | Custom API base URL (for `compatible` or self-hosted providers) |
+| `api_key` | `string` | Per-request API key (overrides env-based key resolution) |
 | `temperature` | `number` (0-2) | Sampling temperature |
 | `top_p` | `number` (0-1) | Nucleus sampling parameter |
 
-**Resolution priority:** per-request `reviewer_config` > environment variables (`REVIEW_PROVIDER`, `REVIEW_MODEL`) > defaults (`openai`, `gpt-5.4`).
+**Resolution priority:** per-request `reviewer_config` (including `api_key`) > environment variables (`REVIEW_PROVIDER`, `REVIEW_MODEL`, `REVIEW_API_KEY`) > defaults (`openai`, `gpt-5.4`).
 
 ## Iteration Limits
 
-The default limit is **7 iterations per phase** (plan review and code review independently). When the limit is reached, the server returns `requires_human_review: true` and `iteration_limit_reached: true` so the caller can escalate to a human.
+Each phase has a configurable iteration limit. Defaults: **plan: 7, code: 7, partition: 5**. When the limit is exceeded, the server returns `requires_human_review: true` and `iteration_limit_reached: true` so the caller can escalate to a human.
+
+**Semantics:** The server blocks the call when `iteration_count > limit` (the limit was already reached in a prior call). When `iteration_count === limit`, the review still runs (last allowed iteration) and `iteration_limit_reached` is `false`. The *next* call will be blocked.
 
 **Configuration:**
-- **Per-request:** Pass `max_review_iterations` in the tool input to override for that call.
-- **Environment variables:** `MAX_PLAN_REVIEW_ITERATIONS` and `MAX_CODE_REVIEW_ITERATIONS`.
-- **Priority:** per-request override > env var > default (7).
+- **Per-request:** Pass `max_review_iterations` in the tool input to override for that call (range: 1–20).
+- **Environment variables:** `MAX_PLAN_REVIEW_ITERATIONS`, `MAX_CODE_REVIEW_ITERATIONS`, `MAX_PARTITION_ITERATIONS`.
+- **Priority:** per-request override > env var > default.
 
 The caller is responsible for tracking `iteration_count` across rounds and passing it on each call. The server validates this count against the limit.
 
@@ -415,8 +418,10 @@ npm run build
 | `OPENROUTER_API_KEY` | Conditional | -- | OpenRouter API key (required if using `openrouter` provider) |
 | `REVIEW_PROVIDER` | No | `openai` | Default provider: `openai`, `anthropic`, `google`, `openrouter`, `compatible` |
 | `REVIEW_MODEL` | No | Provider default | Model to use (e.g. `gpt-5.4`, `claude-sonnet-4-20250514`, `gemini-2.5-pro`) |
+| `REVIEW_API_KEY` | No | -- | API key for `compatible` provider (falls back to `OPENAI_API_KEY`) |
 | `MAX_PLAN_REVIEW_ITERATIONS` | No | `7` | Maximum plan review iterations before requiring human intervention |
 | `MAX_CODE_REVIEW_ITERATIONS` | No | `7` | Maximum code review iterations before requiring human intervention |
+| `MAX_PARTITION_ITERATIONS` | No | `5` | Maximum execution partition iterations before requiring human intervention |
 
 API keys are passed via the MCP configuration `env` block (see below), not through a `.env` file.
 
