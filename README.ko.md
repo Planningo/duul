@@ -23,7 +23,7 @@ DUUL은 [Model Context Protocol](https://modelcontextprotocol.io/) 서버로, MC
 
 ```mermaid
 flowchart TD
-    Start(["사용자: '듀울 돌려'"]):::trigger --> Plan["구현 계획 작성"]
+    Start(["사용자: 'DUUL로 개발 진행해줘'"]):::trigger --> Plan["구현 계획 작성"]
 
     subgraph Phase1["1단계: 계획 핑퐁 (최대 7회 반복)"]
         Plan --> PR["request_plan_review"]
@@ -132,11 +132,11 @@ flowchart LR
 
 ## DUUL 트리거 방법
 
-DUUL 루프는 **자연어**로 활성화됩니다 -- 대화 중에 요청하면 됩니다. 서버가 워크플로우 지시사항을 내장하고 있어 MCP 클라이언트가 자동으로 인식합니다.
+대화 중에 **"DUUL"** (또는 **"듀울"**)을 언급하면 활성화됩니다. 서버가 워크플로우 지시사항을 내장하고 있어 MCP 클라이언트가 자동으로 인식합니다.
 
 **트리거 예시:**
-- "DUUL 돌려", "듀울 리뷰 해줘", "듀울 시작", "사수 리뷰 받자", "리뷰 루프 시작"
-- "run DUUL", "DUUL review this", "start the DUUL loop", "get a DUUL review"
+- "DUUL로 개발 진행해줘", "듀울 돌려줘", "DUUL로 해줘"
+- "run DUUL", "use DUUL for this", "start DUUL"
 
 **트리거가 아닌 것** (에이전트가 직접 처리하는 일반 요청):
 - "코드 리뷰해줘", "이거 확인해봐", "내 계획 봐줘"
@@ -484,7 +484,7 @@ claude mcp add duul \
 }
 ```
 
-설치 후, 자연어로 요청하면 됩니다: **"듀울 돌려"** 또는 **"run DUUL"**.
+설치 후, 자연어로 요청하면 됩니다: **"DUUL로 개발 진행해줘"** 또는 **"run DUUL"**.
 
 ## 아키텍처
 

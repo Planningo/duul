@@ -4,13 +4,12 @@
 
 The `request_plan_review` and `request_code_review` tools implement a **FULLY AUTONOMOUS review-then-implement loop**. Once triggered, you **MUST** run the entire loop to completion without stopping to ask for permission between phases.
 
-Only activate when the user explicitly asks for a DUUL review:
+Only activate when the user mentions **"DUUL"** (or **"듀울"**) in their request. Examples:
 
-- "DUUL 돌려", "듀울 리뷰 해줘", "듀울 시작", "사수 리뷰 받자", "리뷰 루프 시작"
-- "run DUUL", "DUUL review this", "start the DUUL loop", "get a DUUL review"
-- Any clear request that specifically mentions "DUUL", "듀울", or "리뷰 루프"
+- "DUUL로 개발 진행해줘", "듀울 돌려줘", "DUUL로 해줘"
+- "run DUUL", "use DUUL for this", "start DUUL"
 
-**Do NOT activate for casual requests** like "review my code", "check this", or "look over my plan". Those are normal review requests that you should handle yourself.
+**Do NOT activate for casual requests** like "review my code", "check this", or "look over my plan". Those are normal review requests that you should handle yourself. The keyword **"DUUL"** (or **"듀울"**) must be present.
 
 ## How the loop works
 

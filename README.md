@@ -23,7 +23,7 @@ The reviewer has **workspace-aware file exploration** -- when given a `workspace
 
 ```mermaid
 flowchart TD
-    Start(["User: 'run DUUL'"]):::trigger --> Plan["Write implementation plan"]
+    Start(["User: 'DUUL로 개발 진행해줘'"]):::trigger --> Plan["Write implementation plan"]
 
     subgraph Phase1["Phase 1: Plan Ping-Pong (max 7 iterations)"]
         Plan --> PR["request_plan_review"]
@@ -132,11 +132,11 @@ flowchart LR
 
 ## Triggering DUUL
 
-The DUUL loop is activated by **natural language** -- just ask in conversation. The server embeds workflow instructions that the MCP client picks up automatically.
+The DUUL loop is activated by **mentioning "DUUL"** in conversation. The server embeds workflow instructions that the MCP client picks up automatically.
 
 **Trigger examples:**
-- "DUUL 돌려", "듀울 리뷰 해줘", "듀울 시작", "사수 리뷰 받자", "리뷰 루프 시작"
-- "run DUUL", "DUUL review this", "start the DUUL loop", "get a DUUL review"
+- "DUUL로 개발 진행해줘", "듀울 돌려줘", "DUUL로 해줘"
+- "run DUUL", "use DUUL for this", "start DUUL"
 
 **Not triggers** (these are normal requests the agent handles itself):
 - "review my code", "check this", "look over my plan"
@@ -484,7 +484,7 @@ Or add manually to your project-level `.mcp.json`:
 }
 ```
 
-Once installed, just ask in natural language: **"run DUUL"** or **"듀울 돌려"**.
+Once installed, just ask in natural language: **"DUUL로 개발 진행해줘"** or **"run DUUL"**.
 
 ## Architecture
 

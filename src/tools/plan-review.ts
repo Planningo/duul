@@ -111,7 +111,16 @@ export function registerPlanReviewTool(server: McpServer): void {
           }),
         });
 
-        const result = { ...parsed, review_id: reviewId, ...iterMeta };
+        // Invariant: APPROVE with blocking_issues is always wrong — override to REVISE
+        const verdict =
+          parsed.verdict === 'APPROVE' && parsed.blocking_issues?.length > 0
+            ? 'REVISE' as const
+            : parsed.verdict;
+        if (verdict !== parsed.verdict) {
+          console.error(`[duul] Verdict overridden: APPROVE → REVISE (${parsed.blocking_issues.length} blocking issues)`);
+        }
+
+        const result = { ...parsed, verdict, review_id: reviewId, ...iterMeta };
         return {
           content: [
             {
