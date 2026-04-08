@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ArtifactRefSchema, ReviewerConfigSchema, IterationMetaOutputSchema } from './common.js';
 
 export const DependenciesSchema = z.object({
   runtime: z
@@ -39,13 +40,65 @@ export const CodeReviewInputSchema = z.object({
         'Use this to explain codebase-specific facts the reviewer cannot see, ' +
         'or to respond to blocking issues from a previous round.',
     ),
+  // --- Workspace-aware scope fields ---
+  workspace_root: z
+    .string()
+    .optional()
+    .describe(
+      'Absolute path to the workspace root directory. Preferred over project_root. ' +
+        'When provided, the reviewer gains file exploration tools scoped to this workspace.',
+    ),
   project_root: z
     .string()
     .optional()
     .describe(
-      'Absolute path to the project root directory. When provided, the reviewer gains ' +
-        'read_file and list_directory tools to freely explore the codebase during review.',
+      '[DEPRECATED — use workspace_root] Absolute path to the project root directory. ' +
+        'Used as fallback when workspace_root is not provided.',
     ),
+  working_directories: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Subdirectories within workspace_root to restrict file access to. ' +
+        'Acts as a sparse-checkout-like allowlist. If omitted, entire workspace_root is accessible.',
+    ),
+  linked_roots: z
+    .array(z.string())
+    .max(5)
+    .optional()
+    .describe(
+      'Additional read-only workspace roots the reviewer can access. ' +
+        'Each must be a valid absolute path (3+ depth). Max 5.',
+    ),
+  changed_files: z
+    .array(z.string())
+    .optional()
+    .describe('Files changed in this review scope (top-level, separate from project_context)'),
+  entrypoints: z
+    .array(z.string())
+    .optional()
+    .describe('Entry point files the reviewer should start from'),
+  artifact_refs: z
+    .array(ArtifactRefSchema)
+    .max(30)
+    .optional()
+    .describe('References to important files with reason and priority. Max 30.'),
+  tracked_only: z
+    .boolean()
+    .optional()
+    .describe('When true, only git-tracked files are accessible to the reviewer.'),
+  // --- Git metadata ---
+  git_head_sha: z.string().optional().describe('Current git HEAD SHA for this review'),
+  previous_git_head_sha: z.string().optional().describe(
+    'Git HEAD SHA from the previous review round. Used with git_head_sha to detect stale context.',
+  ),
+  workspace_name: z.string().optional().describe('Name of the workspace (for logging/identification)'),
+  // --- Setup/Run metadata ---
+  setup_script_present: z.boolean().optional().describe('Whether a setup script exists in the workspace'),
+  run_script_present: z.boolean().optional().describe('Whether a run/start script exists in the workspace'),
+  environment_files_expected: z.array(z.string()).optional().describe(
+    'Environment files expected but not tracked (e.g. [".env", ".env.local"]). Prevents false positives.',
+  ),
   previous_review_id: z
     .string()
     .optional()
@@ -54,6 +107,27 @@ export const CodeReviewInputSchema = z.object({
         'across rounds and across phases — the reviewer will remember the plan review ' +
         'conversation when doing code review.',
     ),
+  // --- Iteration tracking ---
+  iteration_count: z
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      'Current iteration number (1-based). The caller MUST increment this on each call. ' +
+        'When this reaches the iteration limit, the server returns requires_human_review: true.',
+    ),
+  max_review_iterations: z
+    .number()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe(
+      'Override the maximum iterations for this phase. Default: env MAX_CODE_REVIEW_ITERATIONS or 7.',
+    ),
+  // --- Reviewer config ---
+  reviewer_config: ReviewerConfigSchema.optional().describe(
+    'Per-request reviewer configuration. Overrides env defaults.',
+  ),
 });
 
 const BlockingIssueSchema = z.object({
@@ -69,12 +143,19 @@ const VulnerabilitySchema = z.object({
 
 export const CodeReviewOutputSchema = z.object({
   verdict: z.enum(['APPROVE', 'REVISE']).describe('Final verdict'),
+  review_status: z.enum(['completed', 'incomplete']).describe(
+    'Whether the review was fully completed. "incomplete" means the tool loop was exhausted before the reviewer could finish.',
+  ),
   confidence: z.number().min(0).max(1).describe('Confidence in the verdict (0-1), advisory only'),
   requires_human_review: z.boolean().describe('Whether a human should review this'),
   logic_validation: z.string().describe('How accurately the code implements the approved plan'),
   blocking_issues: z
     .array(BlockingIssueSchema)
     .describe('Issues that must be fixed before proceeding'),
+  merge_blockers: z
+    .array(BlockingIssueSchema)
+    .nullable()
+    .describe('Subset of blocking_issues that should block merge. Null if same as blocking_issues.'),
   non_blocking_suggestions: z
     .array(z.string())
     .describe('Optional improvement suggestions'),
@@ -85,12 +166,21 @@ export const CodeReviewOutputSchema = z.object({
     .string()
     .nullable()
     .describe('Codex-suggested optimized code block, or null if not needed'),
+  follow_up_todos: z.array(z.string()).nullable().describe('Follow-up tasks after implementation'),
+  missing_context: z.array(z.string()).nullable().describe('Files or context the reviewer could not access'),
+  evidence_files: z.array(z.string()).nullable().describe('Files the reviewer examined as evidence'),
+  used_tools: z.array(z.string()).nullable().describe('Tool calls made during review'),
+  tool_exhaustion_reason: z.enum(['budget', 'repeat', 'round_limit']).nullable().describe(
+    'If review_status is incomplete, the reason why the tool loop was exhausted',
+  ),
 });
 
-// Extended output with server-added review_id (not sent to OpenAI, used for MCP response)
-export const CodeReviewMcpOutputSchema = CodeReviewOutputSchema.extend({
-  review_id: z.string().describe('Response ID for maintaining reviewer context across rounds. Pass as previous_review_id on the next call.'),
-});
+// Extended output with server-added fields (not sent to the reviewer model, used for MCP response)
+export const CodeReviewMcpOutputSchema = CodeReviewOutputSchema
+  .extend({
+    review_id: z.string().describe('Response ID for maintaining reviewer context across rounds. Pass as previous_review_id on the next call.'),
+  })
+  .merge(IterationMetaOutputSchema);
 
 export type CodeReviewInput = z.infer<typeof CodeReviewInputSchema>;
 export type CodeReviewOutput = z.infer<typeof CodeReviewOutputSchema>;
