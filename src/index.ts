@@ -12,11 +12,11 @@ The request_plan_review and request_code_review tools implement a FULLY AUTONOMO
 
 ### When to activate
 
-Only activate when the user mentions "DUUL" (or "듀울") in their request. Examples:
-- "DUUL로 개발 진행해줘", "듀울 돌려줘", "DUUL로 해줘"
+Only activate when the user mentions "DUUL" (or "두울") in their request. Examples:
+- "DUUL로 개발 진행해줘", "두울 돌려줘", "DUUL로 해줘"
 - "run DUUL", "use DUUL for this", "start DUUL"
 
-Do NOT activate for casual requests like "review my code", "check this", or "look over my plan". Those are normal review requests that you should handle yourself. The keyword "DUUL" (or "듀울") must be present.
+Do NOT activate for casual requests like "review my code", "check this", or "look over my plan". Those are normal review requests that you should handle yourself. The keyword "DUUL" (or "두울") must be present.
 
 ### How the loop works
 

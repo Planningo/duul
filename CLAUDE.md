@@ -4,12 +4,12 @@
 
 The `request_plan_review` and `request_code_review` tools implement a **FULLY AUTONOMOUS review-then-implement loop**. Once triggered, you **MUST** run the entire loop to completion without stopping to ask for permission between phases.
 
-Only activate when the user mentions **"DUUL"** (or **"듀울"**) in their request. Examples:
+Only activate when the user mentions **"DUUL"** (or **"두울"**) in their request. Examples:
 
-- "DUUL로 개발 진행해줘", "듀울 돌려줘", "DUUL로 해줘"
+- "DUUL로 개발 진행해줘", "두울 돌려줘", "DUUL로 해줘"
 - "run DUUL", "use DUUL for this", "start DUUL"
 
-**Do NOT activate for casual requests** like "review my code", "check this", or "look over my plan". Those are normal review requests that you should handle yourself. The keyword **"DUUL"** (or **"듀울"**) must be present.
+**Do NOT activate for casual requests** like "review my code", "check this", or "look over my plan". Those are normal review requests that you should handle yourself. The keyword **"DUUL"** (or **"두울"**) must be present.
 
 ## How the loop works
 
@@ -73,7 +73,7 @@ If a conversation is interrupted mid-review (context limit, crash, user closes s
      "git_head_sha": "abc123"
    }
    ```
-2. **At the start of a new conversation**, if the user asks to continue DUUL (e.g., "듀울 이어서 해줘", "continue DUUL"), check for `.duul-state.json` in the project root.
+2. **At the start of a new conversation**, if the user asks to continue DUUL (e.g., "두울 이어서 해줘", "continue DUUL"), check for `.duul-state.json` in the project root.
 3. If it exists, read it and resume:
    - Pass `previous_review_id` from the saved `review_id` to maintain reviewer context.
    - Pass `git_head_sha` from the saved state as `previous_git_head_sha`.

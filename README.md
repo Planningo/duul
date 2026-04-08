@@ -135,7 +135,7 @@ flowchart LR
 The DUUL loop is activated by **mentioning "DUUL"** in conversation. The server embeds workflow instructions that the MCP client picks up automatically.
 
 **Trigger examples:**
-- "DUUL로 개발 진행해줘", "듀울 돌려줘", "DUUL로 해줘"
+- "DUUL로 개발 진행해줘", "두울 돌려줘", "DUUL로 해줘"
 - "run DUUL", "use DUUL for this", "start DUUL"
 
 **Not triggers** (these are normal requests the agent handles itself):
