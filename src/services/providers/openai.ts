@@ -147,6 +147,21 @@ const FILESYSTEM_TOOLS = [
   },
 ];
 
+// Guard: strict: true requires every property key to be in required.
+// Catches the mistake at module load time, not at OpenAI call time.
+for (const tool of FILESYSTEM_TOOLS) {
+  if (!('strict' in tool) || !tool.strict) continue;
+  const props = Object.keys(tool.parameters.properties);
+  const req = new Set(tool.parameters.required);
+  const missing = props.filter((k) => !req.has(k));
+  if (missing.length > 0) {
+    throw new Error(
+      `[duul] Tool "${tool.name}" has strict: true but properties [${missing.join(', ')}] are not in required. ` +
+      `Use type union with null for optional params.`,
+    );
+  }
+}
+
 async function executeFilesystemTool(
   projectRoot: string,
   toolName: string,
