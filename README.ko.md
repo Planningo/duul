@@ -19,53 +19,115 @@ MCP Peer Reviewer는 [Model Context Protocol](https://modelcontextprotocol.io/) 
 
 ## 작동 방식
 
+### 전체 리뷰 루프
+
 ```mermaid
 flowchart TD
-    A["사용자: '피어 리뷰 해줘'"] --> B[구현 계획 작성]
-    B --> C[request_plan_review]
-    C --> D{판정?}
-    D -- "REVISE / blocking_issues" --> E[계획 수정]
-    E --> C
-    D -- "requires_human_review" --> F[사용자에게 확인 요청]
-    F --> C
-    D -- "incomplete" --> C2[범위 축소 후 재시도]
-    C2 --> C
-    D -- "APPROVE" --> G[승인된 계획 기반으로 코드 구현]
-    G --> H[request_code_review]
-    H --> I{판정?}
-    I -- "REVISE / blocking_issues" --> J[코드 수정]
-    J --> H
-    I -- "requires_human_review" --> K[사용자에게 확인 요청]
-    K --> H
-    I -- "incomplete" --> H2[범위 축소 후 재시도]
-    H2 --> H
-    I -- "APPROVE" --> L["완료: 계획 승인 & 코드 리뷰 통과"]
+    Start(["사용자: '피어 리뷰 해줘'"]):::trigger --> Plan["구현 계획 작성"]
 
-    style A fill:#e1f5fe
-    style L fill:#c8e6c9
-    style D fill:#fff9c4
-    style I fill:#fff9c4
+    subgraph Phase1["1단계: 계획 핑퐁 (최대 7회 반복)"]
+        Plan --> PR["request_plan_review"]
+        PR --> IterCheck1{반복\n제한?}
+        IterCheck1 -- "초과" --> Human1["⏸ requires_human_review: true"]
+        IterCheck1 -- "제한 내" --> Review1[/"LLM 리뷰어\n(시니어 아키텍트)"/]
+        Review1 --> Status1{review_status?}
+        Status1 -- "incomplete" --> Narrow1["범위 축소 후 재시도\n(artifact_refs 줄이기)"]
+        Narrow1 --> PR
+        Status1 -- "completed" --> Verdict1{verdict?}
+        Verdict1 -- "REVISE" --> Fix1["blocking_issues 기반\n계획 수정"]
+        Fix1 --> PR
+        Verdict1 -- "APPROVE" --> PlanOK(["계획 승인 ✓"]):::approved
+    end
+
+    PlanOK --> Impl["코드 구현\n(실제 파일 작성)"]
+
+    subgraph Phase2["2단계: 코드 핑퐁 (최대 7회 반복)"]
+        Impl --> CR["request_code_review\n+ approved_plan"]
+        CR --> IterCheck2{반복\n제한?}
+        IterCheck2 -- "초과" --> Human2["⏸ requires_human_review: true"]
+        IterCheck2 -- "제한 내" --> Review2[/"LLM 리뷰어\n(엄격한 QA 엔지니어)"/]
+        Review2 --> Status2{review_status?}
+        Status2 -- "incomplete" --> Narrow2["범위 축소 후 재시도"]
+        Narrow2 --> CR
+        Status2 -- "completed" --> Verdict2{verdict?}
+        Verdict2 -- "REVISE" --> Fix2["blocking_issues +\nvulnerabilities 기반 코드 수정"]
+        Fix2 --> CR
+        Verdict2 -- "APPROVE" --> CodeOK(["코드 승인 ✓"]):::approved
+    end
+
+    CodeOK --> Done(["완료: 계획 승인 & 코드 리뷰 통과"]):::done
+
+    classDef trigger fill:#e1f5fe,stroke:#0288d1,color:#01579b
+    classDef approved fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20,stroke-width:2px
 ```
 
-### 내부 동작
+### 선택: 실행 파티션 (멀티 에이전트)
 
-각 도구 호출은 다음 경로를 따릅니다:
+1단계 승인 후, 대규모 계획은 2단계 전에 병렬화 가능한 서브태스크로 분할할 수 있습니다:
+
+```mermaid
+flowchart LR
+    PlanOK(["계획 승인"]) --> EP["request_execution_partition"]
+    EP --> Mode{execution_mode?}
+    Mode -- "serial" --> Serial["단일 에이전트\n전체 실행"]
+    Mode -- "parallel" --> Parallel["N개 에이전트 생성\n(새 워크스페이스)"]
+    Mode -- "hybrid" --> Hybrid["혼합: 병렬 그룹\n+ 직렬 체크포인트"]
+    Serial --> Phase2["서브태스크별 2단계"]
+    Parallel --> Phase2
+    Hybrid --> Phase2
+```
+
+### 내부 동작: 단일 리뷰 호출
 
 ```mermaid
 sequenceDiagram
-    participant Client as MCP 클라이언트 (Claude)
+    participant Client as MCP 클라이언트<br/>(Claude / Codex)
     participant Server as MCP 서버
-    participant Provider as LLM 프로바이더 (OpenAI/Anthropic/Google/...)
+    participant Factory as 프로바이더 팩토리
+    participant Provider as LLM 프로바이더
+    participant FS as 파일시스템 도구
 
     Client->>Server: request_plan_review / request_code_review
-    Server->>Server: 설정/환경변수에서 프로바이더 결정
-    Server->>Server: 사용자 메시지 포맷팅 + 정적 시스템 프롬프트
-    Server->>Provider: 리뷰 요청 (지원 시 에이전틱 도구 루프)
-    Provider->>Server: 도구 호출 (read_file, search_in_files, ...)
-    Server->>Server: 워크스페이스 범위 내 파일시스템 도구 실행
-    Server->>Provider: 도구 결과
-    Provider-->>Server: JSON (verdict, blocking_issues, ...)
-    Server-->>Client: structuredContent
+    Server->>Server: 반복 제한 확인
+    alt 제한 초과
+        Server-->>Client: requires_human_review: true
+    end
+    Server->>Factory: callReview(options)
+    Factory->>Factory: 프로바이더 결정<br/>(reviewer_config → env → openai)
+    Factory->>Provider: provider.review(options)
+
+    loop 에이전틱 도구 루프 (OpenAI만 해당)
+        Provider->>FS: 도구 호출 (read_file, search_in_files, ...)
+        FS->>FS: 범위 적용<br/>(workspace_root, working_dirs,<br/>tracked_only, linked_roots)
+        FS-->>Provider: 도구 결과
+        Note over Provider,FS: 예산 전략:<br/>레벨 0–3 점진적 제한
+    end
+
+    Provider-->>Factory: 구조화된 JSON (verdict, issues, ...)
+    Factory-->>Server: { parsed, reviewId }
+    Server->>Server: iteration_meta 병합
+    Server-->>Client: structuredContent + review_id
+
+    Note over Client,Server: 클라이언트가 review_id를<br/>다음 라운드에서<br/>previous_review_id로 전달
+```
+
+### 프로바이더 결정 흐름
+
+```mermaid
+flowchart LR
+    Req["리뷰 요청"] --> RC{reviewer_config\n.provider?}
+    RC -- "설정됨" --> Use["지정된 값 사용"]
+    RC -- "미설정" --> Env{REVIEW_PROVIDER\n환경 변수?}
+    Env -- "설정됨" --> Use2["환경 변수 값 사용"]
+    Env -- "미설정" --> Default["기본값: openai"]
+    Use --> Create
+    Use2 --> Create
+    Default --> Create
+
+    Create["프로바이더 생성 / 캐시"] --> Cap{기능 수준?}
+    Cap -- "전체 (OpenAI)" --> Full["구조화된 출력\n+ 도구 호출\n+ previous_response_id"]
+    Cap -- "성능 저하 (Anthropic/Google)" --> Degraded["JSON 프롬프트 + zod 검증\n도구 호출 불가\n대화 컨텍스트 불가"]
 ```
 
 ## 리뷰 루프 트리거 방법

@@ -19,53 +19,115 @@ The reviewer has **workspace-aware file exploration** -- when given a `workspace
 
 ## How It Works
 
+### Full Review Loop
+
 ```mermaid
 flowchart TD
-    A["User: 'peer review this'"] --> B[Write implementation plan]
-    B --> C[request_plan_review]
-    C --> D{verdict?}
-    D -- "REVISE / blocking_issues" --> E[Fix plan]
-    E --> C
-    D -- "requires_human_review" --> F[Ask user for guidance]
-    F --> C
-    D -- "incomplete" --> C2[Retry with narrower scope]
-    C2 --> C
-    D -- "APPROVE" --> G[Implement code from approved plan]
-    G --> H[request_code_review]
-    H --> I{verdict?}
-    I -- "REVISE / blocking_issues" --> J[Fix code]
-    J --> H
-    I -- "requires_human_review" --> K[Ask user for guidance]
-    K --> H
-    I -- "incomplete" --> H2[Retry with narrower scope]
-    H2 --> H
-    I -- "APPROVE" --> L["Done: Plan approved & code review passed"]
+    Start(["User: 'peer review this'"]):::trigger --> Plan["Write implementation plan"]
 
-    style A fill:#e1f5fe
-    style L fill:#c8e6c9
-    style D fill:#fff9c4
-    style I fill:#fff9c4
+    subgraph Phase1["Phase 1: Plan Ping-Pong (max 7 iterations)"]
+        Plan --> PR["request_plan_review"]
+        PR --> IterCheck1{iteration\nlimit?}
+        IterCheck1 -- "exceeded" --> Human1["⏸ requires_human_review: true"]
+        IterCheck1 -- "within limit" --> Review1[/"LLM Reviewer\n(Senior Architect)"/]
+        Review1 --> Status1{review_status?}
+        Status1 -- "incomplete" --> Narrow1["Retry with narrower scope\n(fewer artifact_refs)"]
+        Narrow1 --> PR
+        Status1 -- "completed" --> Verdict1{verdict?}
+        Verdict1 -- "REVISE" --> Fix1["Fix plan based on\nblocking_issues"]
+        Fix1 --> PR
+        Verdict1 -- "APPROVE" --> PlanOK(["Plan Approved ✓"]):::approved
+    end
+
+    PlanOK --> Impl["Implement code\n(write actual files)"]
+
+    subgraph Phase2["Phase 2: Code Ping-Pong (max 7 iterations)"]
+        Impl --> CR["request_code_review\n+ approved_plan"]
+        CR --> IterCheck2{iteration\nlimit?}
+        IterCheck2 -- "exceeded" --> Human2["⏸ requires_human_review: true"]
+        IterCheck2 -- "within limit" --> Review2[/"LLM Reviewer\n(Strict QA Engineer)"/]
+        Review2 --> Status2{review_status?}
+        Status2 -- "incomplete" --> Narrow2["Retry with narrower scope"]
+        Narrow2 --> CR
+        Status2 -- "completed" --> Verdict2{verdict?}
+        Verdict2 -- "REVISE" --> Fix2["Fix code based on\nblocking_issues + vulnerabilities"]
+        Fix2 --> CR
+        Verdict2 -- "APPROVE" --> CodeOK(["Code Approved ✓"]):::approved
+    end
+
+    CodeOK --> Done(["Done: Plan approved & code review passed"]):::done
+
+    classDef trigger fill:#e1f5fe,stroke:#0288d1,color:#01579b
+    classDef approved fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20,stroke-width:2px
 ```
 
-### Under the hood
+### Optional: Execution Partition (Multi-Agent)
 
-Each tool call follows this path:
+After Phase 1 approval, large plans can be split into parallelizable subtasks before Phase 2:
+
+```mermaid
+flowchart LR
+    PlanOK(["Plan Approved"]) --> EP["request_execution_partition"]
+    EP --> Mode{execution_mode?}
+    Mode -- "serial" --> Serial["Single agent\nexecutes all"]
+    Mode -- "parallel" --> Parallel["Spawn N agents\n(new workspaces)"]
+    Mode -- "hybrid" --> Hybrid["Mix: parallel groups\n+ serial checkpoints"]
+    Serial --> Phase2["Phase 2 per subtask"]
+    Parallel --> Phase2
+    Hybrid --> Phase2
+```
+
+### Under the Hood: Single Review Call
 
 ```mermaid
 sequenceDiagram
-    participant Client as MCP Client (Claude)
+    participant Client as MCP Client<br/>(Claude / Codex)
     participant Server as MCP Server
-    participant Provider as LLM Provider (OpenAI/Anthropic/Google/...)
+    participant Factory as Provider Factory
+    participant Provider as LLM Provider
+    participant FS as Filesystem Tools
 
     Client->>Server: request_plan_review / request_code_review
-    Server->>Server: Resolve provider from config/env
-    Server->>Server: Format user message + static system prompt
-    Server->>Provider: Review request (agentic tool loop if supported)
-    Provider->>Server: Tool calls (read_file, search_in_files, ...)
-    Server->>Server: Execute filesystem tools within workspace scope
-    Server->>Provider: Tool results
-    Provider-->>Server: JSON (verdict, blocking_issues, ...)
-    Server-->>Client: structuredContent
+    Server->>Server: Check iteration limit
+    alt limit exceeded
+        Server-->>Client: requires_human_review: true
+    end
+    Server->>Factory: callReview(options)
+    Factory->>Factory: Resolve provider<br/>(reviewer_config → env → openai)
+    Factory->>Provider: provider.review(options)
+
+    loop Agentic Tool Loop (OpenAI only)
+        Provider->>FS: Tool call (read_file, search_in_files, ...)
+        FS->>FS: Scope enforcement<br/>(workspace_root, working_dirs,<br/>tracked_only, linked_roots)
+        FS-->>Provider: Tool result
+        Note over Provider,FS: Budget strategy:<br/>Level 0–3 progressive restriction
+    end
+
+    Provider-->>Factory: Structured JSON (verdict, issues, ...)
+    Factory-->>Server: { parsed, reviewId }
+    Server->>Server: Merge iteration_meta
+    Server-->>Client: structuredContent + review_id
+
+    Note over Client,Server: Client passes review_id<br/>as previous_review_id<br/>on next round
+```
+
+### Provider Resolution Flow
+
+```mermaid
+flowchart LR
+    Req["Review Request"] --> RC{reviewer_config\n.provider?}
+    RC -- "set" --> Use["Use specified"]
+    RC -- "not set" --> Env{REVIEW_PROVIDER\nenv var?}
+    Env -- "set" --> Use2["Use env value"]
+    Env -- "not set" --> Default["Default: openai"]
+    Use --> Create
+    Use2 --> Create
+    Default --> Create
+
+    Create["Create / Cache Provider"] --> Cap{capabilities?}
+    Cap -- "full (OpenAI)" --> Full["Structured outputs\n+ tool calling\n+ previous_response_id"]
+    Cap -- "degraded (Anthropic/Google)" --> Degraded["JSON prompt + zod validate\nNo tool calling\nNo conversation context"]
 ```
 
 ## Triggering the Review Loop
