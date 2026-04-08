@@ -78,10 +78,10 @@ const FILESYSTEM_TOOLS = [
       type: 'object' as const,
       properties: {
         query: { type: 'string' as const, description: 'Search pattern (literal string or regex)' },
-        paths: { type: 'array' as const, items: { type: 'string' as const }, description: 'Optional: restrict search to these relative paths/directories' },
-        glob: { type: 'string' as const, description: 'Optional: glob pattern to filter files (e.g. "*.ts", "src/**/*.js")' },
+        paths: { type: ['array', 'null'] as const, items: { type: 'string' as const }, description: 'Optional: restrict search to these relative paths/directories' },
+        glob: { type: ['string', 'null'] as const, description: 'Optional: glob pattern to filter files (e.g. "*.ts", "src/**/*.js")' },
       },
-      required: ['query'],
+      required: ['query', 'paths', 'glob'],
       additionalProperties: false,
     },
     strict: true,
@@ -124,9 +124,9 @@ const FILESYSTEM_TOOLS = [
       type: 'object' as const,
       properties: {
         path: { type: 'string' as const, description: 'Relative path to a JSON file, or "linked:<index>:<path>" for linked roots' },
-        json_pointer: { type: 'string' as const, description: 'Optional: JSON pointer (e.g. "/dependencies", "/scripts/build")' },
+        json_pointer: { type: ['string', 'null'] as const, description: 'Optional: JSON pointer (e.g. "/dependencies", "/scripts/build")' },
       },
-      required: ['path'],
+      required: ['path', 'json_pointer'],
       additionalProperties: false,
     },
     strict: true,
@@ -138,9 +138,9 @@ const FILESYSTEM_TOOLS = [
     parameters: {
       type: 'object' as const,
       properties: {
-        prefix: { type: 'string' as const, description: 'Optional: directory prefix to filter (e.g. "src/")' },
+        prefix: { type: ['string', 'null'] as const, description: 'Optional: directory prefix to filter (e.g. "src/")' },
       },
-      required: [],
+      required: ['prefix'],
       additionalProperties: false,
     },
     strict: true,
