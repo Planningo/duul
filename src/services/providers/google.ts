@@ -38,7 +38,7 @@ export class GoogleProvider implements ReviewerProvider {
     }
     this.apiKey = apiKey;
     this.baseUrl = config?.baseUrl ?? 'https://generativelanguage.googleapis.com';
-    this.model = config?.model ?? 'gemini-2.5-pro';
+    this.model = config?.model ?? 'gemini-3.1-pro-preview';
     this.temperature = config?.temperature ?? 0.2;
     this.topP = config?.topP ?? 0.1;
   }
