@@ -15,24 +15,34 @@ Only activate when the user mentions **"DUUL"** (or **"두울"**) in their reque
 
 **CRITICAL:** This is a continuous, uninterrupted sequence. Do **NOT** pause between phases to ask the user "should I proceed?" or "should I implement?". The user already authorized the full loop when they requested DUUL.
 
-### Phase 1: Upfront-plan Ping-Pong
-1. Write a detailed implementation plan based on the user's requirements.
-2. Call `request_plan_review` with the plan.
-3. If `review_status === "incomplete"`: check `missing_context` and retry with narrower scope.
-4. If `blocking_issues.length > 0` or `verdict === "REVISE"`: fix the plan and call again.
-5. If `requires_human_review === true`: pause and ask the user.
-6. Repeat until `verdict === "APPROVE"` with no blocking issues.
+### Phase 1: Upfront-plan Ping-Pong (delegated to Sonnet subagent)
 
-### Phase 2: Unit-verify Ping-Pong (start IMMEDIATELY after Phase 1 approval — do NOT ask for confirmation)
-7. **Write the actual code** to the project files based on the approved plan. Use your edit/write tools to make real changes.
-8. Call `request_code_review` with the code and the approved plan.
-9. If `review_status === "incomplete"`: check `missing_context` and retry with narrower scope.
-10. If `blocking_issues.length > 0` or `verdict === "REVISE"`: fix the code in the actual files and call again.
-11. If `requires_human_review === true`: pause and ask the user.
-12. Repeat until `verdict === "APPROVE"` with no blocking issues.
+**To save tokens, Phase 1 runs on Sonnet via the `duul-planner` subagent.** The reviewer catches any plan issues, so Sonnet is sufficient for plan authoring.
+
+1. **Launch the `duul-planner` subagent** using the Agent tool with the user's requirements, workspace root path, and any relevant context. The subagent runs on Sonnet automatically (`model: sonnet` in its definition).
+2. The subagent handles the entire plan ping-pong loop internally:
+   - Writes a detailed implementation plan
+   - Calls `request_plan_review` and iterates on REVISE feedback
+   - Returns the approved plan, `review_id`, and `git_head_sha`
+3. If the subagent reports `requires_human_review === true`: pause and ask the user.
+4. Extract `approved_plan`, `review_id`, and `git_head_sha` from the subagent's response.
+
+**Fallback:** If the subagent fails or the MCP tool is not accessible from the subagent, fall back to running Phase 1 directly (same as before but in the main agent).
+
+### Phase 2: Unit-verify Ping-Pong (Opus, start IMMEDIATELY after Phase 1 approval — do NOT ask for confirmation)
+
+Phase 2 runs on the **main agent (Opus)** for maximum code quality.
+
+7. **Write the actual code** to the project files based on the approved plan (received from the `duul-planner` subagent). Use your edit/write tools to make real changes.
+8. **Run lint if available.** Check `package.json` scripts for `lint`, `lint:fix`, or `eslint`, or check for a Makefile/config equivalent. If a lint command exists, run it with auto-fix (e.g. `npm run lint -- --fix` or `npx eslint --fix`). Fix any remaining errors before proceeding. If no lint is configured, skip this step.
+9. Call `request_code_review` with the code and the approved plan.
+10. If `review_status === "incomplete"`: check `missing_context` and retry with narrower scope.
+11. If `blocking_issues.length > 0` or `verdict === "REVISE"`: fix the code in the actual files, re-run lint if applicable, and call again.
+12. If `requires_human_review === true`: pause and ask the user.
+13. Repeat until `verdict === "APPROVE"` with no blocking issues.
 
 ### Completion
-13. Report to the user: "Plan approved and code review passed." with a summary of changes made.
+14. Report to the user: "Plan approved and code review passed." with a summary of changes made.
 
 ## Giving the reviewer workspace visibility
 
