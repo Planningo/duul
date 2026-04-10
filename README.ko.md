@@ -15,6 +15,8 @@ DUUL은 [Model Context Protocol](https://modelcontextprotocol.io/) 서버로, MC
 
 호출 에이전트는 각 단계에서 `APPROVE` 판정을 받을 때까지 리뷰어와 반복하고, 이후 다음 단계로 진행합니다. 이를 통해 한 LLM이 다른 LLM의 작업을 검증하는 크로스 모델 리뷰 워크플로우를 만듭니다.
 
+**토큰 효율 설계:** 1단계(계획 작성)는 Sonnet급 서브에이전트에 위임합니다 — 리뷰어가 계획의 문제를 잡아주므로 충분합니다. 2단계(코드 구현)는 최대 코드 품질을 위해 Opus에서 실행됩니다. 이를 통해 1단계 토큰 비용이 약 80% 절감됩니다.
+
 리뷰어는 **워크스페이스 인식 파일 탐색** 기능을 갖추고 있어, `workspace_root`가 주어지면 7개의 내장 도구(파일 읽기, 코드 검색, 디렉토리 목록 등)를 사용하여 정보에 기반한 리뷰 결정을 내립니다.
 
 ---
@@ -107,7 +109,7 @@ claude mcp add duul \
 | 변수 | 필수 | 기본값 | 설명 |
 |------|------|--------|------|
 | `REVIEW_PROVIDER` | 아니오 | `openai` | 프로바이더: `openai`, `anthropic`, `google`, `openrouter`, `compatible` |
-| `REVIEW_MODEL` | 아니오 | 프로바이더 기본값 | 모델 ID (예: `gpt-5.4`, `claude-sonnet-4-20250514`, `gemini-2.5-pro`) |
+| `REVIEW_MODEL` | 아니오 | 프로바이더 기본값 | 모델 ID (예: `gpt-5.4`, `claude-opus-4-20250514`, `gemini-3.1-pro-preview`) |
 | `OPENAI_API_KEY` | 조건부 | -- | `openai` 또는 `compatible` 프로바이더 사용 시 필수 |
 | `ANTHROPIC_API_KEY` | 조건부 | -- | `anthropic` 프로바이더 사용 시 필수 |
 | `GOOGLE_API_KEY` | 조건부 | -- | `google` 프로바이더 사용 시 필수 |
@@ -116,8 +118,8 @@ claude mcp add duul \
 
 프로바이더별 기본 모델:
 - **OpenAI:** `gpt-5.4`
-- **Anthropic:** `claude-sonnet-4-20250514`
-- **Google:** `gemini-2.5-pro`
+- **Anthropic:** `claude-opus-4-20250514`
+- **Google:** `gemini-3.1-pro-preview`
 
 #### 반복 제한
 
@@ -181,7 +183,7 @@ claude mcp add duul \
 {
   "reviewer_config": {
     "provider": "anthropic",
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-opus-4-20250514",
     "temperature": 0.3,
     "top_p": 0.2
   }
@@ -205,9 +207,9 @@ claude mcp add duul \
 
 ```mermaid
 flowchart TD
-    Start(["사용자: 'DUUL로 개발 진행해줘'"]):::trigger --> Plan["구현 계획 작성"]
+    Start(["사용자: 'DUUL로 개발 진행해줘'"]):::trigger --> Plan["구현 계획 작성\n(Sonnet 서브에이전트)"]:::sonnet
 
-    subgraph Phase1["1단계: 계획 핑퐁 (최대 7회 반복)"]
+    subgraph Phase1["1단계: 계획 핑퐁 — Sonnet (최대 7회 반복)"]
         Plan --> PR["request_plan_review"]
         PR --> IterCheck1{반복\n제한?}
         IterCheck1 -- "초과" --> Human1["⏸ requires_human_review: true"]
@@ -221,9 +223,9 @@ flowchart TD
         Verdict1 -- "APPROVE" --> PlanOK(["계획 승인 ✓"]):::approved
     end
 
-    PlanOK --> Impl["코드 구현\n(실제 파일 작성)"]
+    PlanOK --> Impl["코드 구현\n(실제 파일 작성)"]:::opus
 
-    subgraph Phase2["2단계: 코드 핑퐁 (최대 7회 반복)"]
+    subgraph Phase2["2단계: 코드 핑퐁 — Opus (최대 7회 반복)"]
         Impl --> CR["request_code_review\n+ approved_plan"]
         CR --> IterCheck2{반복\n제한?}
         IterCheck2 -- "초과" --> Human2["⏸ requires_human_review: true"]
@@ -242,6 +244,8 @@ flowchart TD
     classDef trigger fill:#e1f5fe,stroke:#0288d1,color:#01579b
     classDef approved fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
     classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20,stroke-width:2px
+    classDef sonnet fill:#fff3e0,stroke:#f57c00,color:#e65100
+    classDef opus fill:#ede7f6,stroke:#7b1fa2,color:#4a148c
 ```
 
 ### 선택: 실행 파티션 (멀티 에이전트)

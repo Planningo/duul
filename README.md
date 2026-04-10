@@ -15,6 +15,8 @@ DUUL is a [Model Context Protocol](https://modelcontextprotocol.io/) server that
 
 The calling agent iterates with the reviewer on each phase until it receives an `APPROVE` verdict, then moves to the next phase. This creates a cross-model peer review workflow where one LLM checks the work of another.
 
+**Token-efficient by design:** Phase 1 (plan authoring) is delegated to a Sonnet-class subagent, since the reviewer catches any plan issues anyway. Phase 2 (code implementation) stays on Opus for maximum code quality. This typically reduces Phase 1 token costs by ~80%.
+
 The reviewer has **workspace-aware file exploration** -- when given a `workspace_root`, it can autonomously browse the codebase using 7 built-in tools (read files, search code, list directories, etc.) to make informed review decisions instead of speculating.
 
 ---
@@ -92,7 +94,7 @@ Add the following to your `claude_desktop_config.json`:
 
 Replace `/absolute/path/to/duul` with the actual path to this project on your system.
 
-Once installed, just ask in natural language: **"DUUL로 개발 진행해줘"** or **"run DUUL"**.
+Once installed, just ask in natural language: **"run DUUL"** or **"use DUUL for this"**.
 
 ---
 
@@ -107,7 +109,7 @@ All configuration is done via environment variables, passed through the MCP `env
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REVIEW_PROVIDER` | No | `openai` | Provider: `openai`, `anthropic`, `google`, `openrouter`, `compatible` |
-| `REVIEW_MODEL` | No | Provider default | Model ID (e.g. `gpt-5.4`, `claude-sonnet-4-20250514`, `gemini-2.5-pro`) |
+| `REVIEW_MODEL` | No | Provider default | Model ID (e.g. `gpt-5.4`, `claude-opus-4-20250514`, `gemini-3.1-pro-preview`) |
 | `OPENAI_API_KEY` | Conditional | -- | Required for `openai` or `compatible` provider |
 | `ANTHROPIC_API_KEY` | Conditional | -- | Required for `anthropic` provider |
 | `GOOGLE_API_KEY` | Conditional | -- | Required for `google` provider |
@@ -116,8 +118,8 @@ All configuration is done via environment variables, passed through the MCP `env
 
 Default models per provider:
 - **OpenAI:** `gpt-5.4`
-- **Anthropic:** `claude-sonnet-4-20250514`
-- **Google:** `gemini-2.5-pro`
+- **Anthropic:** `claude-opus-4-20250514`
+- **Google:** `gemini-3.1-pro-preview`
 
 #### Iteration Limits
 
@@ -181,7 +183,7 @@ Each review request can include a `reviewer_config` object to override provider 
 {
   "reviewer_config": {
     "provider": "anthropic",
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-opus-4-20250514",
     "temperature": 0.3,
     "top_p": 0.2
   }
@@ -205,9 +207,9 @@ Each review request can include a `reviewer_config` object to override provider 
 
 ```mermaid
 flowchart TD
-    Start(["User: 'DUUL로 개발 진행해줘'"]):::trigger --> Plan["Write implementation plan"]
+    Start(["User: 'run DUUL'"]):::trigger --> Plan["Write implementation plan\n(Sonnet subagent)"]:::sonnet
 
-    subgraph Phase1["Phase 1: Plan Ping-Pong (max 7 iterations)"]
+    subgraph Phase1["Phase 1: Plan Ping-Pong — Sonnet (max 7 iterations)"]
         Plan --> PR["request_plan_review"]
         PR --> IterCheck1{iteration\nlimit?}
         IterCheck1 -- "exceeded" --> Human1["⏸ requires_human_review: true"]
@@ -221,9 +223,9 @@ flowchart TD
         Verdict1 -- "APPROVE" --> PlanOK(["Plan Approved ✓"]):::approved
     end
 
-    PlanOK --> Impl["Implement code\n(write actual files)"]
+    PlanOK --> Impl["Implement code\n(write actual files)"]:::opus
 
-    subgraph Phase2["Phase 2: Code Ping-Pong (max 7 iterations)"]
+    subgraph Phase2["Phase 2: Code Ping-Pong — Opus (max 7 iterations)"]
         Impl --> CR["request_code_review\n+ approved_plan"]
         CR --> IterCheck2{iteration\nlimit?}
         IterCheck2 -- "exceeded" --> Human2["⏸ requires_human_review: true"]
@@ -242,6 +244,8 @@ flowchart TD
     classDef trigger fill:#e1f5fe,stroke:#0288d1,color:#01579b
     classDef approved fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
     classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20,stroke-width:2px
+    classDef sonnet fill:#fff3e0,stroke:#f57c00,color:#e65100
+    classDef opus fill:#ede7f6,stroke:#7b1fa2,color:#4a148c
 ```
 
 ### Optional: Execution Partition (Multi-Agent)
@@ -265,7 +269,6 @@ flowchart LR
 The DUUL loop is activated by **mentioning "DUUL"** in conversation. The server embeds workflow instructions that the MCP client picks up automatically.
 
 **Trigger examples:**
-- "DUUL로 개발 진행해줘", "두울 돌려줘", "DUUL로 해줘"
 - "run DUUL", "use DUUL for this", "start DUUL"
 
 **Not triggers** (these are normal requests the agent handles itself):

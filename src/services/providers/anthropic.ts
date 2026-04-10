@@ -38,7 +38,7 @@ export class AnthropicProvider implements ReviewerProvider {
     }
     this.apiKey = apiKey;
     this.baseUrl = config?.baseUrl ?? 'https://api.anthropic.com';
-    this.model = config?.model ?? 'claude-sonnet-4-20250514';
+    this.model = config?.model ?? 'claude-opus-4-20250514';
     this.temperature = config?.temperature ?? 0.2;
     this.topP = config?.topP ?? 0.1;
   }
