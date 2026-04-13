@@ -8,9 +8,11 @@ import {
 import { getCodeReviewSystemPrompt, formatCodeReviewUserMessage } from '../prompts/code-review-system.js';
 import { callReview } from '../services/reviewer.js';
 import type { TokenUsage } from '../services/reviewer.js';
-import { resolveWorkspaceScope } from '../services/filesystem.js';
+import { resolveWorkspaceScope, getGitDiff } from '../services/filesystem.js';
 import { computeIterationMeta, isIterationLimitExceeded } from '../services/review-limits.js';
 import { logUsage } from '../services/usage-logger.js';
+
+const MAX_INLINE_DIFF_CHARS = 50_000;
 
 const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0, api_calls: 0, provider: 'none', model: 'none', estimated_cost_usd: null };
 
@@ -63,6 +65,22 @@ export function registerCodeReviewTool(server: McpServer): void {
         }
 
         const scope = resolveWorkspaceScope(args);
+
+        // Auto-generate git diff if not provided
+        let gitDiff = args.git_diff;
+        if (!gitDiff && scope?.root && args.changed_files?.length) {
+          try {
+            const diffResult = await getGitDiff(scope.root, args.git_diff_base ?? 'HEAD', args.changed_files, scope);
+            if (diffResult && !diffResult.startsWith('Error') && !diffResult.startsWith('No differences')) {
+              gitDiff = diffResult.length > MAX_INLINE_DIFF_CHARS
+                ? diffResult.slice(0, MAX_INLINE_DIFF_CHARS) + `\n\n[truncated — diff exceeded ${MAX_INLINE_DIFF_CHARS} chars]`
+                : diffResult;
+            }
+          } catch {
+            // Diff generation is best-effort, continue without it
+          }
+        }
+
         const systemPrompt = getCodeReviewSystemPrompt();
         const userMessage = formatCodeReviewUserMessage(
           args.code,
@@ -83,6 +101,7 @@ export function registerCodeReviewTool(server: McpServer): void {
             setupScriptPresent: args.setup_script_present,
             runScriptPresent: args.run_script_present,
             environmentFilesExpected: args.environment_files_expected,
+            gitDiff,
           },
         );
 

@@ -19,6 +19,15 @@ export interface TokenUsage {
   estimated_cost_usd: number | null;
 }
 
+/**
+ * A single conversation turn, used to simulate previous_response_id
+ * for providers that don't support it natively (Anthropic, Google).
+ */
+export interface ConversationTurn {
+  role: 'user' | 'assistant';
+  content: unknown; // provider-specific: string or content block array
+}
+
 export interface ReviewCallOptions<T extends z.ZodType> {
   systemPrompt: string;
   userMessage: string;
@@ -26,6 +35,8 @@ export interface ReviewCallOptions<T extends z.ZodType> {
   outputSchema: T;
   workspaceScope?: WorkspaceScope | null;
   previousReviewId?: string;
+  /** Conversation history from previous rounds (for providers without native context persistence) */
+  conversationHistory?: ConversationTurn[];
   /** Factory to create a structured fallback when the tool loop is exhausted */
   createFallback?: (reason: ExhaustionReason, usedTools: string[]) => z.infer<T>;
 }
@@ -34,6 +45,8 @@ export interface ReviewCallResult<T> {
   parsed: T;
   reviewId: string;
   usage: TokenUsage;
+  /** Conversation turns from this review (for storage/replay in subsequent rounds) */
+  conversationTurns?: ConversationTurn[];
 }
 
 /**

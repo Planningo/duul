@@ -3,8 +3,10 @@
  * Resolves the appropriate provider and delegates the review call.
  */
 import type { z } from 'zod';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import type { WorkspaceScope } from './filesystem.js';
-import type { ReviewerProvider, ReviewCallResult, ExhaustionReason, TokenUsage } from './providers/types.js';
+import type { ReviewerProvider, ReviewCallResult, ExhaustionReason, TokenUsage, ConversationTurn } from './providers/types.js';
 import { OpenAIProvider } from './providers/openai.js';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { GoogleProvider } from './providers/google.js';
@@ -162,6 +164,96 @@ function getProvider(reviewerConfig?: ReviewOptions<z.ZodType>['reviewerConfig']
   return provider;
 }
 
+// --- Conversation history store (disk-persisted per workspace) ---
+
+const MAX_CONVERSATION_ENTRIES = 20;
+const CONVERSATIONS_DIR = '.duul';
+const CONVERSATIONS_FILE = 'conversations.json';
+
+interface StoredConversation {
+  turns: ConversationTurn[];
+  lastAccessed: number;
+}
+
+/**
+ * In-memory cache backed by disk. Keyed by reviewId.
+ * On every write, the full store is flushed to <workspace_root>/.duul/conversations.json.
+ * On read-miss, attempts to load from disk first.
+ */
+const memoryCache = new Map<string, StoredConversation>();
+let diskLoaded = false;
+let lastWorkspaceRoot: string | null = null;
+
+function conversationsPath(workspaceRoot: string): string {
+  return join(workspaceRoot, CONVERSATIONS_DIR, CONVERSATIONS_FILE);
+}
+
+async function loadFromDisk(workspaceRoot: string): Promise<void> {
+  if (diskLoaded && lastWorkspaceRoot === workspaceRoot) return;
+  lastWorkspaceRoot = workspaceRoot;
+  diskLoaded = true;
+
+  try {
+    const raw = await readFile(conversationsPath(workspaceRoot), 'utf-8');
+    const data = JSON.parse(raw) as Record<string, StoredConversation>;
+    for (const [key, entry] of Object.entries(data)) {
+      if (!memoryCache.has(key)) {
+        memoryCache.set(key, entry);
+      }
+    }
+    console.error(`[duul] Loaded ${Object.keys(data).length} conversation(s) from disk`);
+  } catch {
+    // File doesn't exist yet or is corrupt — start fresh
+  }
+}
+
+async function flushToDisk(workspaceRoot: string): Promise<void> {
+  const filePath = conversationsPath(workspaceRoot);
+  try {
+    await mkdir(dirname(filePath), { recursive: true });
+    const data: Record<string, StoredConversation> = {};
+    for (const [key, entry] of memoryCache) {
+      data[key] = entry;
+    }
+    await writeFile(filePath, JSON.stringify(data), 'utf-8');
+    console.error(`[duul] Flushed ${memoryCache.size} conversation(s) to ${filePath}`);
+  } catch (error) {
+    console.error(`[duul] Warning: Failed to flush conversations to disk: ${error instanceof Error ? error.message : error}`);
+  }
+}
+
+function evictOldest(): void {
+  if (memoryCache.size < MAX_CONVERSATION_ENTRIES) return;
+  let oldestKey: string | null = null;
+  let oldestTime = Infinity;
+  for (const [key, entry] of memoryCache) {
+    if (entry.lastAccessed < oldestTime) {
+      oldestTime = entry.lastAccessed;
+      oldestKey = key;
+    }
+  }
+  if (oldestKey) {
+    memoryCache.delete(oldestKey);
+    console.error(`[duul] Conversation store full, evicted oldest entry`);
+  }
+}
+
+async function getConversationHistory(reviewId: string, workspaceRoot?: string): Promise<ConversationTurn[] | undefined> {
+  if (workspaceRoot) await loadFromDisk(workspaceRoot);
+  const entry = memoryCache.get(reviewId);
+  if (!entry) return undefined;
+  entry.lastAccessed = Date.now();
+  return entry.turns;
+}
+
+async function storeConversation(reviewId: string, turns: ConversationTurn[], workspaceRoot?: string): Promise<void> {
+  evictOldest();
+  memoryCache.set(reviewId, { turns, lastAccessed: Date.now() });
+  if (workspaceRoot) {
+    await flushToDisk(workspaceRoot);
+  }
+}
+
 /**
  * Main entry point for all review calls.
  * Resolves provider from config, delegates the call.
@@ -185,5 +277,27 @@ export async function callReview<T extends z.ZodType>(
     );
   }
 
-  return provider.review(options);
+  const workspaceRoot = options.workspaceScope?.root;
+
+  // Retrieve conversation history for providers that use simulated context
+  // OpenAI uses native previous_response_id, so skip for it
+  let conversationHistory: ConversationTurn[] | undefined;
+  if (options.previousReviewId && provider.capabilities.previousResponseId && provider.name !== 'openai') {
+    conversationHistory = await getConversationHistory(options.previousReviewId, workspaceRoot);
+    if (conversationHistory) {
+      console.error(`[duul] Loaded conversation history for ${options.previousReviewId} (${conversationHistory.length} turns)`);
+    } else {
+      console.error(`[duul] Warning: No conversation history found for ${options.previousReviewId}`);
+    }
+  }
+
+  const result = await provider.review({ ...options, conversationHistory });
+
+  // Store conversation turns for future rounds (non-OpenAI providers)
+  if (result.conversationTurns?.length && provider.name !== 'openai') {
+    await storeConversation(result.reviewId, result.conversationTurns, workspaceRoot);
+    console.error(`[duul] Stored conversation (${result.conversationTurns.length} turns) for ${result.reviewId}`);
+  }
+
+  return result;
 }

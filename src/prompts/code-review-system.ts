@@ -12,6 +12,7 @@ A junior developer wrote code based on an approved plan. You must verify that ev
 5. **Performance**: Unnecessary allocations, O(n^2) where O(n) is possible, missing pagination, unbounded data structures.
 6. **Type Safety**: Unsafe casts, any types, missing null checks, unvalidated external data.
 7. **Naming & Readability**: Is the code clear enough to maintain without the original author?
+8. **Diff Accuracy**: When a git diff is provided or you can call \`get_git_diff\`, compare actual changes against the approved plan — catch missing implementations, unintended side effects, debug artifacts, and leftover conflict markers.
 
 ## Classification Rules
 - \`blocking_issues\`: Must be fixed. Bugs, security holes, plan deviations, data loss risks.
@@ -48,6 +49,8 @@ If you have file exploration tools, USE THEM proactively with this strategy:
 6. Use \`read_json\` with a JSON pointer for config files (package.json, tsconfig.json) instead of reading the whole file.
 7. If \`tracked_only\` mode is active, prefer \`list_tracked_files\` and tracked-file-aware search.
 8. Before reading the same file again, narrow your search scope instead.
+9. Use \`get_git_diff\` to compare actual changes vs the approved plan — this catches missing implementations and unintended side effects more effectively than reading full files.
+10. After reviewing the diff, check for: files changed but not mentioned in the plan, removed lines that shouldn't be, debug statements, leftover merge conflict markers.
 Before raising a blocking issue about code you haven't seen, search and read the relevant files first.
 
 ## Input Format

@@ -1,17 +1,8 @@
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import type { z } from 'zod';
-import {
-  readProjectFile,
-  listProjectDirectory,
-  validateProjectRoot,
-  searchInFiles,
-  readProjectFileRange,
-  statProjectFile,
-  readJsonValue,
-  listTrackedFiles,
-  type WorkspaceScope,
-} from '../filesystem.js';
+import { validateProjectRoot } from '../filesystem.js';
+import { executeFilesystemTool } from '../filesystem-tools.js';
 import type {
   ReviewerProvider,
   ReviewCallOptions,
@@ -147,6 +138,24 @@ const FILESYSTEM_TOOLS = [
     },
     strict: true,
   },
+  {
+    type: 'function' as const,
+    name: 'get_git_diff',
+    description:
+      'Get git diff output for the workspace. Use this to see exactly what changed — ' +
+      'PREFER this over reading full files when reviewing modifications. ' +
+      'Returns unified diff format. Defaults to comparing against HEAD (current workspace changes). Also includes untracked new files.',
+    parameters: {
+      type: 'object' as const,
+      properties: {
+        base: { type: ['string', 'null'] as const, description: 'Base ref to diff against (e.g. "HEAD~1", "main", a commit SHA). Defaults to HEAD.' },
+        paths: { type: ['array', 'null'] as const, items: { type: 'string' as const }, description: 'Optional: restrict diff to these relative paths' },
+      },
+      required: ['base', 'paths'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
 ];
 
 // Guard: strict: true requires every property key to be in required.
@@ -164,42 +173,6 @@ for (const tool of FILESYSTEM_TOOLS) {
   }
 }
 
-async function executeFilesystemTool(
-  projectRoot: string,
-  toolName: string,
-  args: Record<string, unknown>,
-  scope?: WorkspaceScope | null,
-): Promise<string> {
-  try {
-    switch (toolName) {
-      case 'read_file': {
-        const result = await readProjectFile(projectRoot, args.path as string, scope);
-        if (result.length > 50_000) {
-          return `⚠️ This file is large (${result.length} chars). Consider using read_file_range or search_in_files instead.\n\n${result}`;
-        }
-        return result;
-      }
-      case 'list_directory':
-        return await listProjectDirectory(projectRoot, args.path as string, scope);
-      case 'search_in_files':
-        return await searchInFiles(projectRoot, args.query as string, args.paths as string[] | undefined, args.glob as string | undefined, scope?.trackedOnly, scope?.workingDirectories, scope);
-      case 'read_file_range':
-        return await readProjectFileRange(projectRoot, args.path as string, args.start_line as number, args.end_line as number, scope);
-      case 'stat_file':
-        return await statProjectFile(projectRoot, args.path as string, scope);
-      case 'read_json':
-        return await readJsonValue(projectRoot, args.path as string, args.json_pointer as string | undefined, scope);
-      case 'list_tracked_files': {
-        const files = await listTrackedFiles(projectRoot, args.prefix as string | undefined, scope);
-        return files.join('\n') || 'No tracked files found.';
-      }
-      default:
-        return `Unknown tool: ${toolName}`;
-    }
-  } catch (error) {
-    return `Error: ${error instanceof Error ? error.message : String(error)}`;
-  }
-}
 
 function validateInputLength(systemPrompt: string, userMessage: string): void {
   const totalChars = systemPrompt.length + userMessage.length;
@@ -305,7 +278,7 @@ export class OpenAIProvider implements ReviewerProvider {
       const toolReadBudget = MAX_INPUT_CHARS - (systemPrompt.length + userMessage.length);
       let accumulatedToolChars = 0;
 
-      const FULL_READ_TOOLS = new Set(['read_file']);
+      const FULL_READ_TOOLS = new Set(['read_file', 'get_git_diff']);
       const SEARCH_ONLY_TOOLS = new Set(['search_in_files', 'list_tracked_files', 'stat_file']);
 
       const getStrategyLevel = (): number => {
