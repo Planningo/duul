@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ArtifactRefSchema, ReviewerConfigSchema, IterationMetaOutputSchema } from './common.js';
+import { ArtifactRefSchema, ReviewerConfigSchema, IterationMetaOutputSchema, TokenUsageOutputSchema } from './common.js';
 
 export const ExecutionPartitionInputSchema = z.object({
   approved_plan: z
@@ -129,7 +129,8 @@ export const ExecutionPartitionOutputSchema = z.object({
 
 export const ExecutionPartitionMcpOutputSchema = ExecutionPartitionOutputSchema
   .extend({ review_id: z.string().describe('Response ID for context continuity') })
-  .merge(IterationMetaOutputSchema);
+  .merge(IterationMetaOutputSchema)
+  .merge(TokenUsageOutputSchema);
 
 export type ExecutionPartitionInput = z.infer<typeof ExecutionPartitionInputSchema>;
 export type ExecutionPartitionOutput = z.infer<typeof ExecutionPartitionOutputSchema>;

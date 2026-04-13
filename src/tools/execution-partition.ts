@@ -7,8 +7,12 @@ import {
 } from '../schemas/execution-partition.js';
 import { getExecutionPartitionSystemPrompt, formatExecutionPartitionUserMessage } from '../prompts/execution-partition-system.js';
 import { callReview } from '../services/reviewer.js';
+import type { TokenUsage } from '../services/reviewer.js';
 import { resolveWorkspaceScope } from '../services/filesystem.js';
 import { computeIterationMeta, isIterationLimitExceeded } from '../services/review-limits.js';
+import { logUsage } from '../services/usage-logger.js';
+
+const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0, api_calls: 0, provider: 'none', model: 'none', estimated_cost_usd: null };
 
 export function registerExecutionPartitionTool(server: McpServer): void {
   server.registerTool(
@@ -70,6 +74,7 @@ export function registerExecutionPartitionTool(server: McpServer): void {
             },
             review_id: '',
             ...iterMeta,
+            token_usage: ZERO_USAGE,
           };
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(limitResult, null, 2) }],
@@ -91,7 +96,7 @@ export function registerExecutionPartitionTool(server: McpServer): void {
           args.max_parallelism,
         );
 
-        const { parsed, reviewId } = await callReview({
+        const { parsed, reviewId, usage } = await callReview({
           systemPrompt,
           userMessage,
           schemaName: 'execution_partition_output',
@@ -138,7 +143,13 @@ export function registerExecutionPartitionTool(server: McpServer): void {
           }),
         });
 
-        const result = { ...parsed, review_id: reviewId, ...iterMeta };
+        const result = { ...parsed, review_id: reviewId, ...iterMeta, token_usage: usage };
+
+        logUsage('execution_partition', result.token_usage, {
+          review_id: reviewId,
+          iteration_count: iterMeta.iteration_count,
+        });
+
         return {
           content: [
             {

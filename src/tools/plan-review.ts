@@ -7,8 +7,12 @@ import {
 } from '../schemas/plan-review.js';
 import { getPlanReviewSystemPrompt, formatPlanReviewUserMessage } from '../prompts/plan-review-system.js';
 import { callReview } from '../services/reviewer.js';
+import type { TokenUsage } from '../services/reviewer.js';
 import { resolveWorkspaceScope } from '../services/filesystem.js';
 import { computeIterationMeta, isIterationLimitExceeded } from '../services/review-limits.js';
+import { logUsage } from '../services/usage-logger.js';
+
+const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0, api_calls: 0, provider: 'none', model: 'none', estimated_cost_usd: null };
 
 export function registerPlanReviewTool(server: McpServer): void {
   server.registerTool(
@@ -52,6 +56,7 @@ export function registerPlanReviewTool(server: McpServer): void {
             recommended_subtask_boundaries: null,
             review_id: '',
             ...iterMeta,
+            token_usage: ZERO_USAGE,
           };
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(limitResult, null, 2) }],
@@ -81,7 +86,7 @@ export function registerPlanReviewTool(server: McpServer): void {
           },
         );
 
-        const { parsed, reviewId } = await callReview({
+        const { parsed, reviewId, usage } = await callReview({
           systemPrompt,
           userMessage,
           schemaName: 'plan_review_output',
@@ -120,7 +125,15 @@ export function registerPlanReviewTool(server: McpServer): void {
           console.error(`[duul] Verdict overridden: APPROVE → REVISE (${parsed.blocking_issues.length} blocking issues)`);
         }
 
-        const result = { ...parsed, verdict, review_id: reviewId, ...iterMeta };
+        const result = { ...parsed, verdict, review_id: reviewId, ...iterMeta, token_usage: usage };
+
+        logUsage('plan_review', result.token_usage, {
+          verdict,
+          review_id: reviewId,
+          iteration_count: iterMeta.iteration_count,
+          workspace_name: args.workspace_name,
+        });
+
         return {
           content: [
             {

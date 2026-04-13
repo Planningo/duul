@@ -18,7 +18,9 @@ import type {
   ReviewCallResult,
   ProviderCapabilities,
   ExhaustionReason,
+  TokenUsage,
 } from './types.js';
+import { estimateCost } from '../pricing.js';
 
 const MAX_INPUT_CHARS = 400_000;
 const MAX_TOOL_ROUNDS = 10;
@@ -255,6 +257,30 @@ export class OpenAIProvider implements ReviewerProvider {
     const tools = effectiveRoot ? FILESYSTEM_TOOLS : undefined;
     let allUsedTools: string[] = [];
 
+    // Accumulate token usage across all API calls
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let apiCallCount = 0;
+
+    const accumulateUsage = (response: OpenAI.Responses.Response) => {
+      apiCallCount++;
+      const u = response.usage;
+      if (u) {
+        totalInputTokens += u.input_tokens ?? 0;
+        totalOutputTokens += u.output_tokens ?? 0;
+      }
+    };
+
+    const buildUsage = (): TokenUsage => ({
+      input_tokens: totalInputTokens,
+      output_tokens: totalOutputTokens,
+      total_tokens: totalInputTokens + totalOutputTokens,
+      api_calls: apiCallCount,
+      provider: 'openai',
+      model: this.model,
+      estimated_cost_usd: estimateCost(this.model, totalInputTokens, totalOutputTokens),
+    });
+
     const baseParams: Record<string, unknown> = {
       model: this.model,
       instructions: systemPrompt,
@@ -271,6 +297,7 @@ export class OpenAIProvider implements ReviewerProvider {
       ...(previousReviewId ? { previous_response_id: previousReviewId } : {}),
     });
 
+    accumulateUsage(response);
     console.error(`[duul] response.id=${response.id} model=${this.model} provider=openai`);
 
     // Agentic tool-calling loop
@@ -350,6 +377,7 @@ export class OpenAIProvider implements ReviewerProvider {
         }
 
         response = await this.apiCallWithRetry({ ...baseParams, previous_response_id: response.id, input: toolResults });
+        accumulateUsage(response);
         console.error(`[duul] response.id=${response.id} (after tool round ${round + 1})`);
 
         if (getStrategyLevel() >= 3 && this.hasPendingFunctionCalls(response)) {
@@ -358,6 +386,7 @@ export class OpenAIProvider implements ReviewerProvider {
             output: 'No more file reads allowed. You must produce your final review verdict now.',
           }));
           response = await this.apiCallWithRetry({ ...baseParams, previous_response_id: response.id, input: stopResults });
+          accumulateUsage(response);
           break;
         }
         if (getStrategyLevel() >= 3) break;
@@ -369,20 +398,25 @@ export class OpenAIProvider implements ReviewerProvider {
           output: 'Tool call limit reached. You must produce your final review verdict now.',
         }));
         response = await this.apiCallWithRetry({ ...baseParams, previous_response_id: response.id, input: stopResults });
+        accumulateUsage(response);
       }
     }
+
+    const usage = buildUsage();
+    const costStr = usage.estimated_cost_usd !== null ? ` (~$${usage.estimated_cost_usd.toFixed(4)})` : '';
+    console.error(`[duul] Token usage: ${usage.input_tokens} in + ${usage.output_tokens} out = ${usage.total_tokens} total (${usage.api_calls} API calls)${costStr}`);
 
     // Extract structured output
     const parsed = this.extractStructuredOutput(response, outputSchema);
     if (parsed !== null) {
-      return { parsed, reviewId: response.id };
+      return { parsed, reviewId: response.id, usage };
     }
 
     if (options.createFallback) {
       const reason: ExhaustionReason = this.hasPendingFunctionCalls(response) ? 'round_limit' : 'budget';
       const fallback = options.createFallback(reason, allUsedTools);
       console.error(`[duul] Returning structured fallback (reason: ${reason}).`);
-      return { parsed: fallback, reviewId: response.id };
+      return { parsed: fallback, reviewId: response.id, usage };
     }
 
     throw new Error('Review failed: could not obtain structured verdict after tool loop.');

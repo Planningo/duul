@@ -4,12 +4,12 @@
  */
 import type { z } from 'zod';
 import type { WorkspaceScope } from './filesystem.js';
-import type { ReviewerProvider, ReviewCallResult, ExhaustionReason } from './providers/types.js';
+import type { ReviewerProvider, ReviewCallResult, ExhaustionReason, TokenUsage } from './providers/types.js';
 import { OpenAIProvider } from './providers/openai.js';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { GoogleProvider } from './providers/google.js';
 
-export type { ReviewerProvider, ReviewCallResult, ExhaustionReason };
+export type { ReviewerProvider, ReviewCallResult, ExhaustionReason, TokenUsage };
 
 type ProviderName = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'compatible';
 
