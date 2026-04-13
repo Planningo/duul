@@ -7,8 +7,12 @@ import {
 } from '../schemas/code-review.js';
 import { getCodeReviewSystemPrompt, formatCodeReviewUserMessage } from '../prompts/code-review-system.js';
 import { callReview } from '../services/reviewer.js';
+import type { TokenUsage } from '../services/reviewer.js';
 import { resolveWorkspaceScope } from '../services/filesystem.js';
 import { computeIterationMeta, isIterationLimitExceeded } from '../services/review-limits.js';
+import { logUsage } from '../services/usage-logger.js';
+
+const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0, api_calls: 0, provider: 'none', model: 'none', estimated_cost_usd: null };
 
 export function registerCodeReviewTool(server: McpServer): void {
   server.registerTool(
@@ -50,6 +54,7 @@ export function registerCodeReviewTool(server: McpServer): void {
             tool_exhaustion_reason: null,
             review_id: '',
             ...iterMeta,
+            token_usage: ZERO_USAGE,
           };
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(limitResult, null, 2) }],
@@ -81,7 +86,7 @@ export function registerCodeReviewTool(server: McpServer): void {
           },
         );
 
-        const { parsed, reviewId } = await callReview({
+        const { parsed, reviewId, usage } = await callReview({
           systemPrompt,
           userMessage,
           schemaName: 'code_review_output',
@@ -117,7 +122,15 @@ export function registerCodeReviewTool(server: McpServer): void {
           console.error(`[duul] Verdict overridden: APPROVE → REVISE (${parsed.blocking_issues.length} blocking issues)`);
         }
 
-        const result = { ...parsed, verdict, review_id: reviewId, ...iterMeta };
+        const result = { ...parsed, verdict, review_id: reviewId, ...iterMeta, token_usage: usage };
+
+        logUsage('code_review', result.token_usage, {
+          verdict,
+          review_id: reviewId,
+          iteration_count: iterMeta.iteration_count,
+          workspace_name: args.workspace_name,
+        });
+
         return {
           content: [
             {

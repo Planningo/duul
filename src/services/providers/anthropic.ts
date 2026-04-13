@@ -4,7 +4,9 @@ import type {
   ReviewCallOptions,
   ReviewCallResult,
   ProviderCapabilities,
+  TokenUsage,
 } from './types.js';
+import { estimateCost } from '../pricing.js';
 
 const MAX_RETRIES = 3;
 
@@ -90,7 +92,9 @@ export class AnthropicProvider implements ReviewerProvider {
 
         const body = await response.json() as {
           id: string;
+          model: string;
           content: Array<{ type: string; text?: string }>;
+          usage?: { input_tokens?: number; output_tokens?: number };
         };
 
         const text = body.content?.find((c: { type: string }) => c.type === 'text')?.text;
@@ -102,7 +106,22 @@ export class AnthropicProvider implements ReviewerProvider {
         const jsonStr = extractJson(text);
         const parsed = outputSchema.parse(JSON.parse(jsonStr));
 
-        return { parsed, reviewId: body.id };
+        const inputTokens = body.usage?.input_tokens ?? 0;
+        const outputTokens = body.usage?.output_tokens ?? 0;
+        const modelUsed = body.model ?? this.model;
+        const usage: TokenUsage = {
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          total_tokens: inputTokens + outputTokens,
+          api_calls: 1,
+          provider: 'anthropic',
+          model: modelUsed,
+          estimated_cost_usd: estimateCost(modelUsed, inputTokens, outputTokens),
+        };
+        const costStr = usage.estimated_cost_usd !== null ? ` (~$${usage.estimated_cost_usd.toFixed(4)})` : '';
+        console.error(`[duul] Token usage: ${usage.input_tokens} in + ${usage.output_tokens} out = ${usage.total_tokens} total${costStr}`);
+
+        return { parsed, reviewId: body.id, usage };
       } catch (error: unknown) {
         clearTimeout(timeout);
         if (attempt < MAX_RETRIES - 1 && error instanceof Error && error.name === 'AbortError') {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ArtifactRefSchema, ReviewerConfigSchema, IterationMetaOutputSchema } from './common.js';
+import { ArtifactRefSchema, ReviewerConfigSchema, IterationMetaOutputSchema, TokenUsageOutputSchema } from './common.js';
 
 export const ProjectContextSchema = z.object({
   file_tree: z
@@ -181,7 +181,8 @@ export const PlanReviewMcpOutputSchema = PlanReviewOutputSchema
   .extend({
     review_id: z.string().describe('Response ID for maintaining reviewer context across rounds. Pass as previous_review_id on the next call.'),
   })
-  .merge(IterationMetaOutputSchema);
+  .merge(IterationMetaOutputSchema)
+  .merge(TokenUsageOutputSchema);
 
 export type PlanReviewInput = z.infer<typeof PlanReviewInputSchema>;
 export type PlanReviewOutput = z.infer<typeof PlanReviewOutputSchema>;
