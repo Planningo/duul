@@ -12,6 +12,7 @@ You are reviewing a development plan submitted by a junior developer. Your job i
 5. **Performance Bottlenecks**: Identify N+1 queries, unbounded loops, missing caching, excessive I/O, or memory leaks.
 6. **Security**: Authentication gaps, injection vectors, improper input validation, secret exposure.
 7. **Race Conditions & Concurrency**: Shared mutable state, missing locks, event ordering assumptions.
+8. **Diff Accuracy**: When a git diff is provided or you can call \`get_git_diff\`, review it for unintended changes — modifications to files outside the plan's scope, accidentally removed code, debug statements, or leftover conflict markers.
 
 ## Output Rules
 - Set \`verdict\` to "APPROVE" ONLY if the plan is genuinely production-ready with zero remaining action items. If you have ANY concrete suggestion that should be incorporated before implementation begins — no matter how small — the verdict is "REVISE".
@@ -46,6 +47,8 @@ If you have file exploration tools, USE THEM proactively with this strategy:
 6. Use \`read_json\` with a JSON pointer for config files (package.json, tsconfig.json) instead of reading the whole file.
 7. If \`tracked_only\` mode is active, prefer \`list_tracked_files\` and tracked-file-aware search.
 8. Before reading the same file again, narrow your search scope instead.
+9. Use \`get_git_diff\` to see exactly what changed — PREFER this over reading full files when reviewing modifications. This shows the actual diff in unified format.
+10. After reviewing the diff, check for unintended changes: files not mentioned in the plan, removed lines that shouldn't be, debug artifacts, or leftover merge conflict markers.
 Before raising a blocking issue about code you haven't seen, search and read the relevant files first.
 
 ## Input Format
@@ -64,6 +67,7 @@ export interface WorkspaceScopeFields {
   setupScriptPresent?: boolean;
   runScriptPresent?: boolean;
   environmentFilesExpected?: string[];
+  gitDiff?: string;
 }
 
 export function formatWorkspaceScope(scope?: WorkspaceScopeFields): string {
@@ -99,6 +103,10 @@ export function formatWorkspaceScope(scope?: WorkspaceScopeFields): string {
 
   if (scope.changedFiles?.length) {
     section += `\n\n## Changed Files\n${scope.changedFiles.map((f) => `- ${f}`).join('\n')}`;
+  }
+
+  if (scope.gitDiff) {
+    section += `\n\n## Git Diff (actual changes)\n\`\`\`diff\n${scope.gitDiff}\n\`\`\``;
   }
 
   if (scope.entrypoints?.length) {

@@ -603,3 +603,159 @@ export async function readJsonValue(
 
   return typeof current === 'string' ? current : JSON.stringify(current, null, 2);
 }
+
+// --- Git diff tool ---
+
+const MAX_GIT_DIFF_BYTES = 200_000;
+
+/**
+ * Run git diff within the workspace scope.
+ * Returns the diff output, capped at MAX_GIT_DIFF_BYTES.
+ *
+ * Defaults to `HEAD` (staged + unstaged vs last commit) rather than `HEAD~1`,
+ * so the reviewer sees only the current workspace changes.
+ *
+ * For untracked (new) files listed in `paths`, appends a synthetic diff
+ * generated via `git diff --no-index /dev/null <file>`, so newly added files
+ * are visible to the reviewer.
+ */
+export async function getGitDiff(
+  root: string,
+  base?: string | null,
+  paths?: string[] | null,
+  scope?: WorkspaceScope | null,
+): Promise<string> {
+  const effectiveBase = base ?? 'HEAD';
+
+  // Validate paths if provided
+  const validatedPaths: string[] = [];
+  if (paths?.length) {
+    const wdirs = scope?.workingDirectories ?? null;
+    for (const p of paths) {
+      if (isAbsolute(p)) {
+        return `Error: Path must be relative to project root: ${p}`;
+      }
+      try {
+        await safePath(root, p, wdirs);
+        validatedPaths.push(p);
+      } catch (error) {
+        return `Error: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
+  } else if (scope?.workingDirectories?.length) {
+    // Scope to working directories if no explicit paths
+    validatedPaths.push(...scope.workingDirectories);
+  }
+
+  const sections: string[] = [];
+
+  // 1. Standard git diff for tracked changes
+  const diffArgs = ['diff', effectiveBase];
+  if (validatedPaths.length > 0) {
+    diffArgs.push('--', ...validatedPaths);
+  }
+
+  try {
+    const tracked = await runGitDiff(root, diffArgs);
+    if (tracked) sections.push(tracked);
+  } catch (error: unknown) {
+    return `Error running git diff: ${error instanceof Error ? error.message : String(error)}`;
+  }
+
+  // 2. Detect untracked (new) files and generate synthetic diffs
+  const untrackedPaths = validatedPaths.length > 0
+    ? validatedPaths
+    : await listUntrackedFiles(root, scope?.workingDirectories);
+  if (untrackedPaths.length > 0) {
+    const untrackedDiffs = await getUntrackedDiffs(root, untrackedPaths);
+    if (untrackedDiffs) sections.push(untrackedDiffs);
+  }
+
+  if (sections.length === 0) {
+    return `No differences found (base: ${effectiveBase}).`;
+  }
+
+  let output = sections.join('\n');
+  if (output.length > MAX_GIT_DIFF_BYTES) {
+    output = output.slice(0, MAX_GIT_DIFF_BYTES) + `\n\n[truncated — diff exceeded ${MAX_GIT_DIFF_BYTES} bytes]`;
+  }
+  return output;
+}
+
+/**
+ * Run a git diff command and return stdout, handling exit code 1 (differences found).
+ */
+async function runGitDiff(root: string, args: string[]): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', args, {
+      cwd: root,
+      maxBuffer: MAX_GIT_DIFF_BYTES + 1024,
+    });
+    return stdout.trim();
+  } catch (error: unknown) {
+    const err = error as { code?: number; stdout?: string; stderr?: string };
+    if (err.code === 1 && err.stdout) {
+      return err.stdout.trim();
+    }
+    throw error;
+  }
+}
+
+/**
+ * List untracked files in the workspace, respecting working_directories scope.
+ * Uses `git ls-files --others --exclude-standard` to find files not yet tracked by git.
+ */
+async function listUntrackedFiles(root: string, workingDirectories?: string[] | null): Promise<string[]> {
+  const args = ['ls-files', '--others', '--exclude-standard'];
+  if (workingDirectories?.length) {
+    args.push('--', ...workingDirectories);
+  }
+  try {
+    const { stdout } = await execFileAsync('git', args, { cwd: root, maxBuffer: 512 * 1024 });
+    return stdout.trim().split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * For a list of paths, find untracked files and produce synthetic diffs
+ * so newly added files appear in the review context.
+ */
+async function getUntrackedDiffs(root: string, paths: string[]): Promise<string> {
+  const diffs: string[] = [];
+
+  for (const p of paths) {
+    const tracked = await isTrackedFile(root, p);
+    if (tracked) continue;
+
+    // File exists but is untracked — generate synthetic diff
+    const resolved = resolve(root, p);
+    try {
+      const stats = await lstat(resolved);
+      if (!stats.isFile()) continue;
+      if (stats.size > MAX_FILE_SIZE) {
+        diffs.push(`diff --git a/${p} b/${p}\nnew file\n--- /dev/null\n+++ b/${p}\n@@ Binary or large file (${stats.size} bytes) @@`);
+        continue;
+      }
+    } catch {
+      continue; // File doesn't exist
+    }
+
+    try {
+      const { stdout } = await execFileAsync(
+        'git', ['diff', '--no-index', '--', '/dev/null', p],
+        { cwd: root, maxBuffer: MAX_GIT_DIFF_BYTES },
+      );
+      if (stdout.trim()) diffs.push(stdout.trim());
+    } catch (error: unknown) {
+      // git diff --no-index exits with 1 when differences are found
+      const err = error as { code?: number; stdout?: string };
+      if (err.code === 1 && err.stdout?.trim()) {
+        diffs.push(err.stdout.trim());
+      }
+    }
+  }
+
+  return diffs.join('\n');
+}

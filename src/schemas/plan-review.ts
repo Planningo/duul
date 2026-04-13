@@ -104,6 +104,18 @@ export const PlanReviewInputSchema = z.object({
   environment_files_expected: z.array(z.string()).optional().describe(
     'Environment files expected but not tracked (e.g. [".env", ".env.local"]). Prevents false positives.',
   ),
+  // --- Git diff ---
+  git_diff: z
+    .string()
+    .optional()
+    .describe(
+      'Pre-computed git diff to include in review context. If omitted and workspace_root + changed_files are provided, ' +
+        'the diff is auto-generated.',
+    ),
+  git_diff_base: z
+    .string()
+    .optional()
+    .describe('Base ref for auto-generated git diff (e.g. "HEAD", "main"). Default: "HEAD".'),
   previous_review_id: z
     .string()
     .optional()
