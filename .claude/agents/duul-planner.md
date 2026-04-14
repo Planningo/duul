@@ -20,6 +20,7 @@ You will receive:
 
 1. **Explore the codebase** to understand the current state — read relevant files, check project structure, dependencies, etc.
 2. **Write a detailed implementation plan** that covers:
+   - **Problem Statement**: The user's original request and what problem it solves — quote or closely paraphrase the user's words so the reviewer can verify the plan actually addresses the right problem
    - What files to create/modify
    - The approach and architecture
    - Edge cases and error handling
