@@ -17,6 +17,10 @@ export interface TokenUsage {
   model: string;
   /** Estimated cost in USD (null if pricing unknown for this model) */
   estimated_cost_usd: number | null;
+  /** Input tokens served from provider prompt cache (billed at ~0.1× input). */
+  cached_input_tokens?: number;
+  /** Input tokens written to the provider prompt cache (Anthropic only; billed at ~1.25× input). */
+  cache_creation_input_tokens?: number;
 }
 
 /**

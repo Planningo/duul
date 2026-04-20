@@ -18,10 +18,25 @@ const MAX_REPEAT_CALLS = 3;
 
 const LINKED_PATH_HINT = ' To access a linked root, prefix with "linked:<index>:<path>" (e.g. "linked:0:src/types.ts").';
 
+interface AnthropicToolInputSchema {
+  type: 'object';
+  properties: Record<string, unknown>;
+  required: string[];
+}
+
+interface AnthropicTool {
+  name: string;
+  description: string;
+  input_schema: AnthropicToolInputSchema;
+  cache_control?: { type: 'ephemeral' };
+}
+
 /**
  * Anthropic tool definitions in Claude Messages API format.
+ * `cache_control` on the last tool marks the end of the static tool prefix
+ * so Anthropic caches system + all tools as one contiguous block.
  */
-const ANTHROPIC_TOOLS = [
+const ANTHROPIC_TOOLS: AnthropicTool[] = [
   {
     name: 'read_file',
     description:
@@ -124,6 +139,7 @@ const ANTHROPIC_TOOLS = [
       },
       required: [],
     },
+    cache_control: { type: 'ephemeral' },
   },
 ];
 
@@ -146,7 +162,18 @@ interface AnthropicResponse {
   model: string;
   stop_reason: string;
   content: ContentBlock[];
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+}
+
+interface SystemBlock {
+  type: 'text';
+  text: string;
+  cache_control?: { type: 'ephemeral' };
 }
 
 /**
@@ -198,19 +225,36 @@ export class AnthropicProvider implements ReviewerProvider {
     const schemaJson = JSON.stringify(zodToJsonSchema(outputSchema), null, 2);
     const enhancedSystem = `${systemPrompt}\n\n## Output Format\nYou MUST respond with ONLY a valid JSON object matching this schema. No markdown, no explanation, no code blocks — only the JSON object.\n\n${schemaJson}`;
 
+    // Wrap system prompt in a cacheable block so the provider returns
+    // cache_read_input_tokens on rounds 2+.
+    const systemBlocks: SystemBlock[] = [
+      { type: 'text', text: enhancedSystem, cache_control: { type: 'ephemeral' } },
+    ];
+
     const tools = effectiveRoot ? ANTHROPIC_TOOLS : undefined;
     let allUsedTools: string[] = [];
 
     // Accumulate token usage across all API calls
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let totalCachedInputTokens = 0;
+    let totalCacheCreationTokens = 0;
     let apiCallCount = 0;
 
     const accumulateUsage = (body: AnthropicResponse) => {
       apiCallCount++;
       if (body.usage) {
-        totalInputTokens += body.usage.input_tokens ?? 0;
+        // Anthropic reports input_tokens, cache_read_input_tokens, and
+        // cache_creation_input_tokens as three disjoint buckets. Sum them so
+        // totalInputTokens matches OpenAI's convention (cached tokens included
+        // in the input total) — that keeps total_tokens and estimateCost correct.
+        const nonCachedInput = body.usage.input_tokens ?? 0;
+        const cacheRead = body.usage.cache_read_input_tokens ?? 0;
+        const cacheWrite = body.usage.cache_creation_input_tokens ?? 0;
+        totalInputTokens += nonCachedInput + cacheRead + cacheWrite;
         totalOutputTokens += body.usage.output_tokens ?? 0;
+        totalCachedInputTokens += cacheRead;
+        totalCacheCreationTokens += cacheWrite;
       }
     };
 
@@ -221,7 +265,15 @@ export class AnthropicProvider implements ReviewerProvider {
       api_calls: apiCallCount,
       provider: 'anthropic',
       model: this.model,
-      estimated_cost_usd: estimateCost(this.model, totalInputTokens, totalOutputTokens),
+      estimated_cost_usd: estimateCost(
+        this.model,
+        totalInputTokens,
+        totalOutputTokens,
+        totalCachedInputTokens,
+        totalCacheCreationTokens,
+      ),
+      ...(totalCachedInputTokens > 0 ? { cached_input_tokens: totalCachedInputTokens } : {}),
+      ...(totalCacheCreationTokens > 0 ? { cache_creation_input_tokens: totalCacheCreationTokens } : {}),
     });
 
     // Build messages array with optional conversation history
@@ -239,7 +291,7 @@ export class AnthropicProvider implements ReviewerProvider {
       { role: 'user' as const, content: userMessage },
     ];
 
-    let body = await this.apiCallWithRetry(enhancedSystem, messages, tools);
+    let body = await this.apiCallWithRetry(systemBlocks, messages, tools);
     accumulateUsage(body);
     console.error(`[duul] response.id=${body.id} model=${this.model} provider=anthropic`);
 
@@ -323,7 +375,7 @@ export class AnthropicProvider implements ReviewerProvider {
         messages.push({ role: 'user', content: toolResults });
         conversationTurns.push({ role: 'user' as const, content: toolResults });
 
-        body = await this.apiCallWithRetry(enhancedSystem, messages, tools);
+        body = await this.apiCallWithRetry(systemBlocks, messages, tools);
         accumulateUsage(body);
         conversationTurns.push({ role: 'assistant' as const, content: body.content });
         console.error(`[duul] response.id=${body.id} (after tool round ${round + 1})`);
@@ -339,7 +391,7 @@ export class AnthropicProvider implements ReviewerProvider {
             }));
             messages.push({ role: 'assistant', content: body.content });
             messages.push({ role: 'user', content: stopResults });
-            body = await this.apiCallWithRetry(enhancedSystem, messages, tools);
+            body = await this.apiCallWithRetry(systemBlocks, messages, tools);
             accumulateUsage(body);
             conversationTurns.push({ role: 'user' as const, content: stopResults });
             conversationTurns.push({ role: 'assistant' as const, content: body.content });
@@ -358,7 +410,7 @@ export class AnthropicProvider implements ReviewerProvider {
         }));
         messages.push({ role: 'assistant', content: body.content });
         messages.push({ role: 'user', content: stopResults });
-        body = await this.apiCallWithRetry(enhancedSystem, messages, tools);
+        body = await this.apiCallWithRetry(systemBlocks, messages, tools);
         accumulateUsage(body);
         conversationTurns.push({ role: 'user' as const, content: stopResults });
         conversationTurns.push({ role: 'assistant' as const, content: body.content });
@@ -367,7 +419,11 @@ export class AnthropicProvider implements ReviewerProvider {
 
     const usage = buildUsage();
     const costStr = usage.estimated_cost_usd !== null ? ` (~$${usage.estimated_cost_usd.toFixed(4)})` : '';
-    console.error(`[duul] Token usage: ${usage.input_tokens} in + ${usage.output_tokens} out = ${usage.total_tokens} total (${usage.api_calls} API calls)${costStr}`);
+    const cacheParts: string[] = [];
+    if (usage.cached_input_tokens) cacheParts.push(`cache_read: ${usage.cached_input_tokens}`);
+    if (usage.cache_creation_input_tokens) cacheParts.push(`cache_write: ${usage.cache_creation_input_tokens}`);
+    const cachedStr = cacheParts.length ? ` [${cacheParts.join(', ')}]` : '';
+    console.error(`[duul] Token usage: ${usage.input_tokens} in + ${usage.output_tokens} out = ${usage.total_tokens} total (${usage.api_calls} API calls)${cachedStr}${costStr}`);
 
     // Extract text content and parse JSON
     const text = body.content.find((c): c is TextBlock => c.type === 'text')?.text;
@@ -387,9 +443,9 @@ export class AnthropicProvider implements ReviewerProvider {
   }
 
   private async apiCallWithRetry(
-    system: string,
+    system: SystemBlock[],
     messages: AnthropicMessage[],
-    tools?: typeof ANTHROPIC_TOOLS,
+    tools?: AnthropicTool[],
   ): Promise<AnthropicResponse> {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const controller = new AbortController();
@@ -402,6 +458,7 @@ export class AnthropicProvider implements ReviewerProvider {
             'Content-Type': 'application/json',
             'x-api-key': this.apiKey,
             'anthropic-version': '2023-06-01',
+            'anthropic-beta': 'prompt-caching-2024-07-31',
           },
           body: JSON.stringify({
             model: this.model,
