@@ -45,7 +45,7 @@ scoop install ripgrep
 ```bash
 claude mcp add duul \
   -e OPENAI_API_KEY=sk-... \
-  -- npx -y duul
+  -- npx -y @planningo/duul
 ```
 
 또는 프로젝트 레벨 `.mcp.json` 파일에 수동으로 추가합니다:
@@ -55,7 +55,7 @@ claude mcp add duul \
   "mcpServers": {
     "duul": {
       "command": "npx",
-      "args": ["-y", "duul"],
+      "args": ["-y", "@planningo/duul"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
@@ -73,7 +73,7 @@ claude mcp add duul \
   "mcpServers": {
     "duul": {
       "command": "npx",
-      "args": ["-y", "duul"],
+      "args": ["-y", "@planningo/duul"],
       "env": {
         "OPENAI_API_KEY": "sk-...",
         "REVIEW_PROVIDER": "openai"
@@ -92,7 +92,7 @@ npm install
 npm run build
 ```
 
-그런 다음 MCP 설정에서 `npx -y duul` 대신 `node /absolute/path/to/duul/build/index.js`를 사용하세요.
+그런 다음 MCP 설정에서 `npx -y @planningo/duul` 대신 `node /absolute/path/to/duul/build/index.js`를 사용하세요.
 
 설치 후, 자연어로 요청하면 됩니다: **"DUUL로 개발 진행해줘"** 또는 **"run DUUL"**.
 

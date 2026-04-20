@@ -45,7 +45,7 @@ scoop install ripgrep
 ```bash
 claude mcp add duul \
   -e OPENAI_API_KEY=sk-... \
-  -- npx -y duul
+  -- npx -y @planningo/duul
 ```
 
 Or add manually to your project-level `.mcp.json`:
@@ -55,7 +55,7 @@ Or add manually to your project-level `.mcp.json`:
   "mcpServers": {
     "duul": {
       "command": "npx",
-      "args": ["-y", "duul"],
+      "args": ["-y", "@planningo/duul"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
@@ -73,7 +73,7 @@ Add the following to your `claude_desktop_config.json`:
   "mcpServers": {
     "duul": {
       "command": "npx",
-      "args": ["-y", "duul"],
+      "args": ["-y", "@planningo/duul"],
       "env": {
         "OPENAI_API_KEY": "sk-...",
         "REVIEW_PROVIDER": "openai"
@@ -92,7 +92,7 @@ npm install
 npm run build
 ```
 
-Then point the MCP config at `node /absolute/path/to/duul/build/index.js` instead of `npx -y duul`.
+Then point the MCP config at `node /absolute/path/to/duul/build/index.js` instead of `npx -y @planningo/duul`.
 
 Once installed, just ask in natural language: **"run DUUL"** or **"use DUUL for this"**.
 
