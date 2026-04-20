@@ -1,6 +1,7 @@
 /**
  * Appends token usage records to a JSONL log file for historical tracking.
  *
+ * Gated by $DUUL_DEBUG_TOKEN (truthy: "1", "true", "yes", "on").
  * Log file location: $DUUL_USAGE_LOG or ~/.duul/usage.jsonl
  * Each line is a JSON object with timestamp, tool, usage, and metadata.
  *
@@ -24,11 +25,17 @@ function getLogPath(): string {
   return join(homedir(), '.duul', 'usage.jsonl');
 }
 
+function isDebugTokenEnabled(): boolean {
+  const v = process.env.DUUL_DEBUG_TOKEN?.toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
 export function logUsage(
   tool: string,
   usage: TokenUsage,
   meta: Record<string, unknown> = {},
 ): void {
+  if (!isDebugTokenEnabled()) return;
   // Fire-and-forget — don't block the review response
   writeEntry(tool, usage, meta).catch(() => {
     // Silently ignore logging failures
