@@ -94,12 +94,32 @@ function findPricing(model: string): ModelPricing | null {
   return bestMatch;
 }
 
-export function estimateCost(model: string, inputTokens: number, outputTokens: number): number | null {
+/**
+ * Cache-aware cost estimate. `inputTokens` is the provider-reported total input
+ * bucket. `cachedInputTokens` (cache reads, 0.1× input price) and
+ * `cacheCreationTokens` (Anthropic cache writes, 1.25× input price) are
+ * already included in that total, so we subtract them from the full-price
+ * bucket before pricing.
+ */
+export function estimateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cachedInputTokens: number = 0,
+  cacheCreationTokens: number = 0,
+): number | null {
   const pricing = findPricing(model);
   if (!pricing) return null;
 
-  const inputCost = (inputTokens / 1_000_000) * pricing.input;
+  const cached = Math.max(0, cachedInputTokens);
+  const cacheWrite = Math.max(0, cacheCreationTokens);
+  const nonCachedInput = Math.max(0, inputTokens - cached - cacheWrite);
+
+  const nonCachedInputCost = (nonCachedInput / 1_000_000) * pricing.input;
+  const cacheReadCost = (cached / 1_000_000) * pricing.input * 0.1;
+  const cacheWriteCost = (cacheWrite / 1_000_000) * pricing.input * 1.25;
   const outputCost = (outputTokens / 1_000_000) * pricing.output;
+  const total = nonCachedInputCost + cacheReadCost + cacheWriteCost + outputCost;
   // Round to 6 decimal places to avoid floating point noise
-  return Math.round((inputCost + outputCost) * 1_000_000) / 1_000_000;
+  return Math.round(total * 1_000_000) / 1_000_000;
 }

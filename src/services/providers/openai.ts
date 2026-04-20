@@ -233,6 +233,7 @@ export class OpenAIProvider implements ReviewerProvider {
     // Accumulate token usage across all API calls
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let totalCachedInputTokens = 0;
     let apiCallCount = 0;
 
     const accumulateUsage = (response: OpenAI.Responses.Response) => {
@@ -241,6 +242,7 @@ export class OpenAIProvider implements ReviewerProvider {
       if (u) {
         totalInputTokens += u.input_tokens ?? 0;
         totalOutputTokens += u.output_tokens ?? 0;
+        totalCachedInputTokens += u.input_tokens_details?.cached_tokens ?? 0;
       }
     };
 
@@ -251,7 +253,8 @@ export class OpenAIProvider implements ReviewerProvider {
       api_calls: apiCallCount,
       provider: 'openai',
       model: this.model,
-      estimated_cost_usd: estimateCost(this.model, totalInputTokens, totalOutputTokens),
+      estimated_cost_usd: estimateCost(this.model, totalInputTokens, totalOutputTokens, totalCachedInputTokens),
+      ...(totalCachedInputTokens > 0 ? { cached_input_tokens: totalCachedInputTokens } : {}),
     });
 
     const baseParams: Record<string, unknown> = {
@@ -377,7 +380,8 @@ export class OpenAIProvider implements ReviewerProvider {
 
     const usage = buildUsage();
     const costStr = usage.estimated_cost_usd !== null ? ` (~$${usage.estimated_cost_usd.toFixed(4)})` : '';
-    console.error(`[duul] Token usage: ${usage.input_tokens} in + ${usage.output_tokens} out = ${usage.total_tokens} total (${usage.api_calls} API calls)${costStr}`);
+    const cachedStr = usage.cached_input_tokens ? ` [cached: ${usage.cached_input_tokens}]` : '';
+    console.error(`[duul] Token usage: ${usage.input_tokens} in + ${usage.output_tokens} out = ${usage.total_tokens} total (${usage.api_calls} API calls)${cachedStr}${costStr}`);
 
     // Extract structured output
     const parsed = this.extractStructuredOutput(response, outputSchema);

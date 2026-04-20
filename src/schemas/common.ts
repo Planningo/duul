@@ -66,5 +66,7 @@ export const TokenUsageOutputSchema = z.object({
     provider: z.string().describe('Provider used (openai, anthropic, google, etc.)'),
     model: z.string().describe('Model used for the review'),
     estimated_cost_usd: z.number().nullable().describe('Estimated cost in USD based on model pricing (null if pricing unknown)'),
+    cached_input_tokens: z.number().optional().describe('Input tokens served from the provider prompt cache (billed at ~0.1× input).'),
+    cache_creation_input_tokens: z.number().optional().describe('Input tokens written to the provider prompt cache (Anthropic only; billed at ~1.25× input).'),
   }).describe('Token usage and estimated cost for this review call'),
 });
