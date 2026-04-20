@@ -3,3 +3,4 @@ build/
 .env
 .env.*
 .duul/
+.claude/settings.local.json

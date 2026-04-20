@@ -40,21 +40,12 @@ sudo apt install ripgrep
 scoop install ripgrep
 ```
 
-### Build from Source
-
-```bash
-git clone https://github.com/Planningo/duul.git
-cd duul
-npm install
-npm run build
-```
-
-### Setup with Claude Code
+### Install from npm (recommended)
 
 ```bash
 claude mcp add duul \
   -e OPENAI_API_KEY=sk-... \
-  -- node /absolute/path/to/duul/build/index.js
+  -- npx -y duul
 ```
 
 Or add manually to your project-level `.mcp.json`:
@@ -63,8 +54,8 @@ Or add manually to your project-level `.mcp.json`:
 {
   "mcpServers": {
     "duul": {
-      "command": "node",
-      "args": ["/absolute/path/to/duul/build/index.js"],
+      "command": "npx",
+      "args": ["-y", "duul"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
@@ -81,8 +72,8 @@ Add the following to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "duul": {
-      "command": "node",
-      "args": ["/absolute/path/to/duul/build/index.js"],
+      "command": "npx",
+      "args": ["-y", "duul"],
       "env": {
         "OPENAI_API_KEY": "sk-...",
         "REVIEW_PROVIDER": "openai"
@@ -92,7 +83,16 @@ Add the following to your `claude_desktop_config.json`:
 }
 ```
 
-Replace `/absolute/path/to/duul` with the actual path to this project on your system.
+### Build from Source (for development)
+
+```bash
+git clone https://github.com/Planningo/duul.git
+cd duul
+npm install
+npm run build
+```
+
+Then point the MCP config at `node /absolute/path/to/duul/build/index.js` instead of `npx -y duul`.
 
 Once installed, just ask in natural language: **"run DUUL"** or **"use DUUL for this"**.
 

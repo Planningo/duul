@@ -40,21 +40,12 @@ sudo apt install ripgrep
 scoop install ripgrep
 ```
 
-### 소스에서 빌드
-
-```bash
-git clone https://github.com/Planningo/duul.git
-cd duul
-npm install
-npm run build
-```
-
-### Claude Code에서 설정
+### npm에서 설치 (권장)
 
 ```bash
 claude mcp add duul \
   -e OPENAI_API_KEY=sk-... \
-  -- node /absolute/path/to/duul/build/index.js
+  -- npx -y duul
 ```
 
 또는 프로젝트 레벨 `.mcp.json` 파일에 수동으로 추가합니다:
@@ -63,8 +54,8 @@ claude mcp add duul \
 {
   "mcpServers": {
     "duul": {
-      "command": "node",
-      "args": ["/absolute/path/to/duul/build/index.js"],
+      "command": "npx",
+      "args": ["-y", "duul"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
@@ -81,8 +72,8 @@ claude mcp add duul \
 {
   "mcpServers": {
     "duul": {
-      "command": "node",
-      "args": ["/absolute/path/to/duul/build/index.js"],
+      "command": "npx",
+      "args": ["-y", "duul"],
       "env": {
         "OPENAI_API_KEY": "sk-...",
         "REVIEW_PROVIDER": "openai"
@@ -92,7 +83,16 @@ claude mcp add duul \
 }
 ```
 
-`/absolute/path/to/duul`을 실제 프로젝트 경로로 교체하십시오.
+### 소스에서 빌드 (개발용)
+
+```bash
+git clone https://github.com/Planningo/duul.git
+cd duul
+npm install
+npm run build
+```
+
+그런 다음 MCP 설정에서 `npx -y duul` 대신 `node /absolute/path/to/duul/build/index.js`를 사용하세요.
 
 설치 후, 자연어로 요청하면 됩니다: **"DUUL로 개발 진행해줘"** 또는 **"run DUUL"**.
 
