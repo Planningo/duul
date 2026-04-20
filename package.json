@@ -4,10 +4,48 @@
   "description": "DUUL — Dual-phase Upfront-plan & Unit-verify Loop. MCP server for LLM peer review of plans and code.",
   "type": "module",
   "main": "build/index.js",
-  "bin": "build/index.js",
+  "bin": {
+    "duul": "build/index.js"
+  },
+  "files": [
+    "build",
+    "!build/__tests__",
+    "README.md",
+    "README.ko.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
-    "start": "node build/index.js"
+    "start": "node build/index.js",
+    "test": "tsc && node --test build/__tests__/*.test.js",
+    "token-report": "node scripts/token-report.mjs",
+    "prepublishOnly": "npm run build",
+    "release": "changeset publish"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "anthropic",
+    "openai",
+    "llm",
+    "code-review",
+    "peer-review",
+    "duul"
+  ],
+  "author": "Planningo",
+  "license": "MIT",
+  "homepage": "https://github.com/Planningo/duul#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Planningo/duul.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Planningo/duul/issues"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -15,6 +53,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.8.0"
   }
