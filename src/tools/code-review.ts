@@ -11,6 +11,7 @@ import type { TokenUsage } from '../services/reviewer.js';
 import { resolveWorkspaceScope, getGitDiff } from '../services/filesystem.js';
 import { computeIterationMeta, isIterationLimitExceeded } from '../services/review-limits.js';
 import { logUsage } from '../services/usage-logger.js';
+import { applyGates } from '../services/review-gates.js';
 
 const MAX_INLINE_DIFF_CHARS = 50_000;
 
@@ -54,6 +55,10 @@ export function registerCodeReviewTool(server: McpServer): void {
             evidence_files: null,
             used_tools: null,
             tool_exhaustion_reason: null,
+            user_original_request_echo: null,
+            symptom_impact: null,
+            symptom_match_notes: null,
+            gates_tripped: null,
             review_id: '',
             ...iterMeta,
             token_usage: ZERO_USAGE,
@@ -103,6 +108,7 @@ export function registerCodeReviewTool(server: McpServer): void {
             environmentFilesExpected: args.environment_files_expected,
             gitDiff,
           },
+          args.user_original_request,
         );
 
         const { parsed, reviewId, usage } = await callReview({
@@ -129,25 +135,58 @@ export function registerCodeReviewTool(server: McpServer): void {
             evidence_files: null,
             used_tools: usedTools,
             tool_exhaustion_reason: reason,
+            user_original_request_echo: null,
+            symptom_impact: null,
+            symptom_match_notes: null,
+            gates_tripped: null,
           }),
         });
 
         // Invariant: APPROVE with blocking_issues is always wrong — override to REVISE
-        const verdict =
+        let verdict =
           parsed.verdict === 'APPROVE' && parsed.blocking_issues?.length > 0
-            ? 'REVISE' as const
+            ? ('REVISE' as const)
             : parsed.verdict;
         if (verdict !== parsed.verdict) {
           console.error(`[duul] Verdict overridden: APPROVE → REVISE (${parsed.blocking_issues.length} blocking issues)`);
         }
 
-        const result = { ...parsed, verdict, review_id: reviewId, ...iterMeta, token_usage: usage };
+        // Post-LLM gates
+        const gates = applyGates({
+          phase: 'code',
+          userOriginalRequest: args.user_original_request,
+          notesToReviewer: args.notes_to_reviewer,
+          changedFiles: args.changed_files,
+          gitDiff,
+          artifactRefs: args.artifact_refs,
+          symptomImpact: parsed.symptom_impact,
+        });
+        let requires_human_review = parsed.requires_human_review;
+        let blocking_issues = parsed.blocking_issues;
+        if (gates.tripped.length > 0) {
+          if (gates.forcedVerdict === 'REVISE') verdict = 'REVISE';
+          if (gates.forcedHumanReview) requires_human_review = true;
+          blocking_issues = [...blocking_issues, ...gates.extraBlockingIssues];
+          console.error(`[duul] Code gates tripped: ${gates.tripped.join(', ')}`);
+        }
+
+        const result = {
+          ...parsed,
+          verdict,
+          requires_human_review,
+          blocking_issues,
+          gates_tripped: gates.tripped.length > 0 ? gates.tripped : null,
+          review_id: reviewId,
+          ...iterMeta,
+          token_usage: usage,
+        };
 
         logUsage('code_review', result.token_usage, {
           verdict,
           review_id: reviewId,
           iteration_count: iterMeta.iteration_count,
           workspace_name: args.workspace_name,
+          gates_tripped: result.gates_tripped,
         });
 
         return {

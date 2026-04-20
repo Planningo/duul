@@ -52,6 +52,7 @@ Phase 2 runs on the **main agent (Opus)** for maximum code quality.
 - Pass `changed_files`, `entrypoints`, and `artifact_refs` to guide the reviewer's focus.
 - Set `tracked_only: true` to restrict file access to git-tracked files only.
 - If the reviewer still raises an incorrect concern despite having codebase access, use `notes_to_reviewer` to rebut it.
+- **ALWAYS pass `user_original_request`** with the user's verbatim, unparaphrased problem statement. The reviewer uses it to enforce symptom-match (before/after/causal_chain) and server-side gates catch scope-punting, test-only fixes, and rendering-symptom mismatches when this field is present.
 
 ### Scope precedence
 - `workspace_root` takes priority over `project_root` (deprecated).
