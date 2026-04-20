@@ -458,7 +458,6 @@ export class AnthropicProvider implements ReviewerProvider {
             'Content-Type': 'application/json',
             'x-api-key': this.apiKey,
             'anthropic-version': '2023-06-01',
-            'anthropic-beta': 'prompt-caching-2024-07-31',
           },
           body: JSON.stringify({
             model: this.model,
