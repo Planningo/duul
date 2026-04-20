@@ -45,6 +45,14 @@ export const PlanReviewInputSchema = z.object({
         'Use this to explain codebase-specific facts the reviewer cannot see, ' +
         'or to respond to blocking issues from a previous round.',
     ),
+  user_original_request: z
+    .string()
+    .max(4000)
+    .optional()
+    .describe(
+      "The user's original, unedited problem statement (not paraphrased by the caller). " +
+        'Used by the reviewer to verify the plan actually addresses the reported symptom.',
+    ),
   // --- Workspace-aware scope fields ---
   workspace_root: z
     .string()
@@ -186,6 +194,25 @@ export const PlanReviewOutputSchema = z.object({
   ),
   coordination_risks: z.array(z.string()).nullable().describe('Coordination risks if parallelized'),
   recommended_subtask_boundaries: z.array(z.string()).nullable().describe('Suggested subtask split boundaries'),
+  user_original_request_echo: z.string().nullable().describe(
+    'Verbatim echo of user_original_request so the reviewer commits to what it was asked to solve. Null only if the caller omitted user_original_request.',
+  ),
+  symptom_impact: z
+    .object({
+      before: z.string().describe('Observable symptom the user reported, in their own terms.'),
+      after: z.string().describe('What the user will observe after this plan is implemented.'),
+      causal_chain: z.string().describe("Why the planned change causes 'before' → 'after'."),
+    })
+    .nullable()
+    .describe(
+      'How the plan is expected to change the user-visible symptom. Null only if user_original_request was not supplied.',
+    ),
+  symptom_match_notes: z.string().nullable().describe(
+    'If plan does NOT clearly address the reported symptom, explain the gap here. Null if fully addressed.',
+  ),
+  gates_tripped: z.array(z.string()).nullable().describe(
+    'Server-populated list of post-LLM gate names that fired. Reviewer should leave null.',
+  ),
 });
 
 // Extended output with server-added fields (not sent to the reviewer model, used for MCP response)

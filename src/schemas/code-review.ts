@@ -40,6 +40,14 @@ export const CodeReviewInputSchema = z.object({
         'Use this to explain codebase-specific facts the reviewer cannot see, ' +
         'or to respond to blocking issues from a previous round.',
     ),
+  user_original_request: z
+    .string()
+    .max(4000)
+    .optional()
+    .describe(
+      "The user's original, unedited problem statement (not paraphrased by the caller). " +
+        'Used by the reviewer to verify the code actually makes the reported symptom go away.',
+    ),
   // --- Workspace-aware scope fields ---
   workspace_root: z
     .string()
@@ -184,6 +192,25 @@ export const CodeReviewOutputSchema = z.object({
   used_tools: z.array(z.string()).nullable().describe('Tool calls made during review'),
   tool_exhaustion_reason: z.enum(['budget', 'repeat', 'round_limit']).nullable().describe(
     'If review_status is incomplete, the reason why the tool loop was exhausted',
+  ),
+  user_original_request_echo: z.string().nullable().describe(
+    'Verbatim echo of user_original_request so the reviewer commits to what it was asked to solve. Null only if the caller omitted user_original_request.',
+  ),
+  symptom_impact: z
+    .object({
+      before: z.string().describe('Observable symptom the user reported, in their own terms.'),
+      after: z.string().describe('What the user observes now that this code is merged.'),
+      causal_chain: z.string().describe("Why the code change causes 'before' → 'after'."),
+    })
+    .nullable()
+    .describe(
+      'How the code changes the user-visible symptom. Null only if user_original_request was not supplied.',
+    ),
+  symptom_match_notes: z.string().nullable().describe(
+    'If code does NOT clearly address the reported symptom, explain the gap here. Null if fully addressed.',
+  ),
+  gates_tripped: z.array(z.string()).nullable().describe(
+    'Server-populated list of post-LLM gate names that fired. Reviewer should leave null.',
   ),
 });
 
