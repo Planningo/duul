@@ -161,6 +161,16 @@ Each phase has a maximum number of review iterations. When exceeded, the server 
 }
 ```
 
+#### Reviewer File-Read Budget
+
+Caps the total bytes the reviewer can pull from the workspace via its file-exploration tools per review call. Once exceeded, subsequent tool calls return a budget-exhausted message so the reviewer submits its verdict instead of continuing to request files.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DUUL_MAX_REVIEWER_BYTES` | `200000` | Max cumulative bytes returned by reviewer file tools per review call |
+
+Lower values reduce `code_review` tokens/cost at the risk of the reviewer missing context. Raise for complex reviews that need broad exploration.
+
 #### Per-Request Override
 
 You can also override the iteration limit on individual review calls via the `max_review_iterations` input parameter (range: 1–20). This takes priority over the environment variable.

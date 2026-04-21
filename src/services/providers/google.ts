@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import { validateProjectRoot } from '../filesystem.js';
-import { executeFilesystemTool } from '../filesystem-tools.js';
+import { executeFilesystemTool, createReviewerByteBudget } from '../filesystem-tools.js';
 import type {
   ReviewerProvider,
   ReviewCallOptions,
@@ -254,6 +254,7 @@ export class GoogleProvider implements ReviewerProvider {
 
       const toolCache = new Map<string, string>();
       const callCounts = new Map<string, number>();
+      const byteBudget = createReviewerByteBudget();
 
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
         const parts = body.candidates?.[0]?.content?.parts ?? [];
@@ -293,7 +294,7 @@ export class GoogleProvider implements ReviewerProvider {
             continue;
           }
 
-          const result = await executeFilesystemTool(effectiveRoot, name, args, workspaceScope);
+          const result = await executeFilesystemTool(effectiveRoot, name, args, workspaceScope, byteBudget);
           toolCache.set(cacheKey, result);
           allUsedTools.push(`${name}(${argSummary})`);
           accumulatedToolChars += result.length;

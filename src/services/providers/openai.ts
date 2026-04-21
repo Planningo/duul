@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import type { z } from 'zod';
 import { validateProjectRoot } from '../filesystem.js';
-import { executeFilesystemTool } from '../filesystem-tools.js';
+import { executeFilesystemTool, createReviewerByteBudget } from '../filesystem-tools.js';
 import type {
   ReviewerProvider,
   ReviewCallOptions,
@@ -308,6 +308,7 @@ export class OpenAIProvider implements ReviewerProvider {
 
       const toolCache = new Map<string, string>();
       const callCounts = new Map<string, number>();
+      const byteBudget = createReviewerByteBudget();
 
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
         const functionCalls = this.getFunctionCalls(response);
@@ -343,7 +344,7 @@ export class OpenAIProvider implements ReviewerProvider {
             continue;
           }
 
-          const result = await executeFilesystemTool(effectiveRoot, call.name, args, workspaceScope);
+          const result = await executeFilesystemTool(effectiveRoot, call.name, args, workspaceScope, byteBudget);
           toolCache.set(cacheKey, result);
           allUsedTools.push(`${call.name}(${argSummary})`);
           accumulatedToolChars += result.length;
