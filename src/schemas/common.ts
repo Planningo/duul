@@ -61,6 +61,14 @@ export const IterationMetaOutputSchema = z.object({
   iteration_count: z.number().describe('Current iteration number (1-based) as reported by the caller.'),
   iteration_limit: z.number().describe('Maximum iterations allowed for this phase.'),
   iteration_limit_reached: z.boolean().describe('Whether the iteration limit has been reached.'),
+  cost_warning: z
+    .string()
+    .nullable()
+    .describe(
+      'Soft warning string emitted once iteration_count crosses ~60% of iteration_limit. ' +
+        'Includes the current round cost so the orchestrator can decide whether to accept a near-verdict or escalate. ' +
+        'Null when below the threshold.',
+    ),
 });
 
 /**

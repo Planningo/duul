@@ -9,7 +9,7 @@ import { getExecutionPartitionSystemPrompt, formatExecutionPartitionUserMessage 
 import { callReview } from '../services/reviewer.js';
 import type { TokenUsage } from '../services/reviewer.js';
 import { resolveWorkspaceScope } from '../services/filesystem.js';
-import { computeIterationMeta, isIterationLimitExceeded } from '../services/review-limits.js';
+import { computeIterationMeta, isIterationLimitExceeded, computeCostWarning } from '../services/review-limits.js';
 import { logUsage } from '../services/usage-logger.js';
 
 const ZERO_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0, api_calls: 0, provider: 'none', model: 'none', estimated_cost_usd: null };
@@ -74,6 +74,7 @@ export function registerExecutionPartitionTool(server: McpServer): void {
             },
             review_id: '',
             ...iterMeta,
+            cost_warning: null,
             token_usage: ZERO_USAGE,
           };
           return {
@@ -144,7 +145,13 @@ export function registerExecutionPartitionTool(server: McpServer): void {
           }),
         });
 
-        const result = { ...parsed, review_id: reviewId, ...iterMeta, token_usage: usage };
+        const result = {
+          ...parsed,
+          review_id: reviewId,
+          ...iterMeta,
+          cost_warning: computeCostWarning(iterMeta, usage.estimated_cost_usd),
+          token_usage: usage,
+        };
 
         logUsage('execution_partition', result.token_usage, {
           review_id: reviewId,
