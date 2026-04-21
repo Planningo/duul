@@ -203,11 +203,27 @@ npm run build
 | 필드 | 타입 | 기본값 | 설명 |
 |------|------|--------|------|
 | `provider` | `string` | env / `openai` | `openai`, `anthropic`, `google`, `openrouter`, `compatible` |
-| `model` | `string` | env / 프로바이더 기본값 | 모델 식별자 |
+| `model` | `string \| { plan?, code?, partition? }` | env / 프로바이더 기본값 | 모델 식별자. 객체로 전달하면 도구마다 다른 모델을 사용할 수 있습니다(아래 참고). |
 | `base_url` | `string` | -- | 커스텀 API 엔드포인트 (`compatible` 또는 자체 호스팅용) |
 | `api_key` | `string` | -- | 요청별 API 키 (환경 변수 오버라이드) |
 | `temperature` | `number` | `0.2` | 샘플링 온도 (0–2) |
 | `top_p` | `number` | `0.1` | 핵 샘플링 (0–1) |
+
+#### 도구별 모델 오버라이드
+
+`model`에는 문자열 하나(모든 리뷰 도구에 적용) 또는 도구별 오버라이드 객체를 전달할 수 있습니다. 객체에 지정되지 않은 도구는 `REVIEW_MODEL`/프로바이더 기본값으로 폴백합니다.
+
+```json
+{
+  "reviewer_config": {
+    "model": {
+      "code": "claude-opus-4-20250514"
+    }
+  }
+}
+```
+
+**의도한 방향은 약화가 아닌 강화입니다.** 계획 단계의 결함은 구현 전체로 증폭되므로 `plan`의 기본값은 여전히 강력한 모델에 유지해야 합니다. 이 기능은 `plan`은 기본값을 유지하고 `code_review`에 Opus처럼 더 강한 모델을 쓰고 싶은 사용자를 위한 것이지, `plan`을 약화시켜 비용을 줄이려는 용도가 아닙니다.
 
 ---
 

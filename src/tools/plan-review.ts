@@ -118,6 +118,7 @@ export function registerPlanReviewTool(server: McpServer): void {
           outputSchema: PlanReviewOutputSchema,
           workspaceScope: scope,
           previousReviewId: args.previous_review_id,
+          toolName: 'plan',
           reviewerConfig: args.reviewer_config,
           createFallback: (reason, usedTools) => ({
             verdict: 'REVISE' as const,

@@ -203,11 +203,27 @@ Each review request can include a `reviewer_config` object to override provider 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `provider` | `string` | env / `openai` | `openai`, `anthropic`, `google`, `openrouter`, `compatible` |
-| `model` | `string` | env / provider default | Model identifier |
+| `model` | `string \| { plan?, code?, partition? }` | env / provider default | Model identifier. Pass an object to use different models per tool (see below). |
 | `base_url` | `string` | -- | Custom API endpoint (for `compatible` or self-hosted) |
 | `api_key` | `string` | -- | Per-request API key (overrides env) |
 | `temperature` | `number` | `0.2` | Sampling temperature (0–2) |
 | `top_p` | `number` | `0.1` | Nucleus sampling (0–1) |
+
+#### Per-Tool Model Override
+
+`model` can be a single string (applied to every review tool) or an object with per-tool overrides. Tools that are not listed fall back to `REVIEW_MODEL`/provider default.
+
+```json
+{
+  "reviewer_config": {
+    "model": {
+      "code": "claude-opus-4-20250514"
+    }
+  }
+}
+```
+
+**Intended direction: upgrade, not downgrade.** Plan-phase defects compound through implementation, so the default for `plan` should stay on a strong model. This knob is for users who want to spend MORE on `code_review` (e.g. use Opus for code while keeping plan on the default), not to save money by weakening `plan`.
 
 ---
 

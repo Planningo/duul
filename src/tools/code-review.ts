@@ -118,6 +118,7 @@ export function registerCodeReviewTool(server: McpServer): void {
           outputSchema: CodeReviewOutputSchema,
           workspaceScope: scope,
           previousReviewId: args.previous_review_id,
+          toolName: 'code',
           reviewerConfig: args.reviewer_config,
           createFallback: (reason, usedTools) => ({
             verdict: 'REVISE' as const,

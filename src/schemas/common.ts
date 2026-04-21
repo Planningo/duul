@@ -18,9 +18,18 @@ export const ReviewerConfigSchema = z.object({
     .optional()
     .describe('Review provider. Default: env REVIEW_PROVIDER or "openai".'),
   model: z
-    .string()
+    .union([
+      z.string(),
+      z.object({
+        plan: z.string().optional(),
+        code: z.string().optional(),
+        partition: z.string().optional(),
+      }),
+    ])
     .optional()
-    .describe('Model to use. Default: env REVIEW_MODEL or provider default.'),
+    .describe(
+      'Model to use. Either a single string applied to all tools, or an object with per-tool overrides (plan/code/partition). Default: env REVIEW_MODEL or provider default.',
+    ),
   base_url: z
     .string()
     .optional()

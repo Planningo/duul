@@ -103,6 +103,7 @@ export function registerExecutionPartitionTool(server: McpServer): void {
           outputSchema: ExecutionPartitionOutputSchema,
           workspaceScope: scope,
           previousReviewId: args.previous_review_id,
+          toolName: 'partition',
           reviewerConfig: args.reviewer_config,
           createFallback: (_reason, _usedTools) => ({
             execution_mode: 'serial' as const,
