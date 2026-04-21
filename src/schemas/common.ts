@@ -63,6 +63,7 @@ export const IterationMetaOutputSchema = z.object({
   iteration_limit_reached: z.boolean().describe('Whether the iteration limit has been reached.'),
   cost_warning: z
     .string()
+    .optional()
     .nullable()
     .describe(
       'Soft warning string emitted once iteration_count crosses ~60% of iteration_limit. ' +

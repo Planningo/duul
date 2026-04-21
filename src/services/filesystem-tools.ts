@@ -14,8 +14,6 @@ import {
   type WorkspaceScope,
 } from './filesystem.js';
 
-const DEFAULT_MAX_REVIEWER_BYTES = 200_000;
-
 /**
  * Mutable per-review byte counter. Passed by reference into executeFilesystemTool
  * so every successful tool return adds to `used`, and calls short-circuit once
@@ -27,14 +25,16 @@ export interface ReviewerByteBudget {
 }
 
 /**
- * Resolve the reviewer file-read cap from env. Read once per call so tests can
- * override DUUL_MAX_REVIEWER_BYTES between runs.
+ * Resolve the reviewer file-read cap from env. Opt-in: if DUUL_MAX_REVIEWER_BYTES
+ * is unset/invalid, returns Infinity (no cap). Measurements showed a 200KB default
+ * was too tight — ~1/3 of code reviews hit the cap and spent extra rounds.
+ * Cost-conscious users can set DUUL_MAX_REVIEWER_BYTES=200000 (or similar) explicitly.
  */
 export function getMaxReviewerBytes(): number {
   const raw = process.env.DUUL_MAX_REVIEWER_BYTES;
-  if (!raw) return DEFAULT_MAX_REVIEWER_BYTES;
+  if (!raw) return Infinity;
   const parsed = parseInt(raw, 10);
-  if (isNaN(parsed) || parsed <= 0) return DEFAULT_MAX_REVIEWER_BYTES;
+  if (isNaN(parsed) || parsed <= 0) return Infinity;
   return parsed;
 }
 
@@ -95,7 +95,7 @@ export async function executeFilesystemTool(
     }
 
     if (budget) {
-      budget.used += result.length;
+      budget.used += Buffer.byteLength(result, 'utf8');
     }
     return result;
   } catch (error) {
