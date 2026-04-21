@@ -9,7 +9,7 @@ import { getPlanReviewSystemPrompt, formatPlanReviewUserMessage } from '../promp
 import { callReview } from '../services/reviewer.js';
 import type { TokenUsage } from '../services/reviewer.js';
 import { resolveWorkspaceScope, getGitDiff } from '../services/filesystem.js';
-import { computeIterationMeta, isIterationLimitExceeded } from '../services/review-limits.js';
+import { computeIterationMeta, isIterationLimitExceeded, computeCostWarning } from '../services/review-limits.js';
 import { logUsage } from '../services/usage-logger.js';
 import { applyGates } from '../services/review-gates.js';
 
@@ -63,6 +63,7 @@ export function registerPlanReviewTool(server: McpServer): void {
             gates_tripped: null,
             review_id: '',
             ...iterMeta,
+            cost_warning: null,
             token_usage: ZERO_USAGE,
           };
           return {
@@ -118,6 +119,7 @@ export function registerPlanReviewTool(server: McpServer): void {
           outputSchema: PlanReviewOutputSchema,
           workspaceScope: scope,
           previousReviewId: args.previous_review_id,
+          toolName: 'plan',
           reviewerConfig: args.reviewer_config,
           createFallback: (reason, usedTools) => ({
             verdict: 'REVISE' as const,
@@ -181,6 +183,7 @@ export function registerPlanReviewTool(server: McpServer): void {
           gates_tripped: gates.tripped.length > 0 ? gates.tripped : null,
           review_id: reviewId,
           ...iterMeta,
+          cost_warning: computeCostWarning(iterMeta, usage.estimated_cost_usd),
           token_usage: usage,
         };
 

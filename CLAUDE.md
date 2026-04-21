@@ -100,6 +100,12 @@ If a conversation is interrupted mid-review (context limit, crash, user closes s
 - Retry with: narrower scope (fewer `artifact_refs`), or more specific `changed_files`.
 - Do NOT treat an incomplete review as a pass — always retry or escalate.
 
+### Watching for `cost_warning`
+
+Every review response includes an optional `cost_warning` field (null by default). Once `iteration_count` crosses ~60% of `iteration_limit` (e.g. iteration 5 of 7, or iteration 3 of 5), the server populates it with a short message that includes the current round's estimated cost.
+
+When `cost_warning` is non-null, **surface it to the user before deciding to continue**. Typical framing: "We're on iteration N of M at ~$X per round — do you want me to keep iterating, accept the current REVISE with minor issues, or escalate this to human review?" Don't silently burn through the remaining iterations.
+
 ## Important rules
 
 - **NEVER stop between Phase 1 and Phase 2** to ask "should I implement?" — just do it.

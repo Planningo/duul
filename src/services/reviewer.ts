@@ -15,6 +15,10 @@ export type { ReviewerProvider, ReviewCallResult, ExhaustionReason, TokenUsage }
 
 type ProviderName = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'compatible';
 
+export type ReviewToolName = 'plan' | 'code' | 'partition';
+
+type ReviewerModel = string | { plan?: string; code?: string; partition?: string };
+
 export interface ReviewOptions<T extends z.ZodType> {
   systemPrompt: string;
   userMessage: string;
@@ -22,15 +26,31 @@ export interface ReviewOptions<T extends z.ZodType> {
   outputSchema: T;
   workspaceScope?: WorkspaceScope | null;
   previousReviewId?: string;
+  toolName?: ReviewToolName;
   reviewerConfig?: {
     provider?: string;
-    model?: string;
+    model?: ReviewerModel;
     base_url?: string;
     api_key?: string;
     temperature?: number;
     top_p?: number;
   };
   createFallback?: (reason: ExhaustionReason, usedTools: string[]) => z.infer<T>;
+}
+
+/**
+ * Resolve a concrete model string from either the flat string form or
+ * the per-tool object form. Returns undefined when nothing is set so the
+ * provider falls back to env/default.
+ */
+export function resolveModelForTool(
+  model: ReviewerModel | undefined,
+  toolName: ReviewToolName | undefined,
+): string | undefined {
+  if (model === undefined) return undefined;
+  if (typeof model === 'string') return model;
+  if (!toolName) return undefined;
+  return model[toolName];
 }
 
 /**
@@ -84,11 +104,15 @@ function apiKeyFingerprint(key: string | undefined): string {
   return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
 
-function getProviderCacheKey(provider: ProviderName, config?: ReviewOptions<z.ZodType>['reviewerConfig']): string {
+function getProviderCacheKey(
+  provider: ProviderName,
+  resolvedModel: string | undefined,
+  config?: ReviewOptions<z.ZodType>['reviewerConfig'],
+): string {
   const apiKey = config?.api_key ?? resolveApiKey(provider);
   return JSON.stringify({
     provider,
-    model: config?.model,
+    model: resolvedModel,
     base_url: config?.base_url,
     temperature: config?.temperature,
     top_p: config?.top_p,
@@ -98,14 +122,22 @@ function getProviderCacheKey(provider: ProviderName, config?: ReviewOptions<z.Zo
 
 /**
  * Create or retrieve a cached provider instance.
+ *
+ * `toolName` lets callers use the per-tool model override form:
+ * `{ plan: "...", code: "...", partition: "..." }`. The resolved model
+ * participates in the cache key so per-tool models don't collide.
  */
-function getProvider(reviewerConfig?: ReviewOptions<z.ZodType>['reviewerConfig']): ReviewerProvider {
+function getProvider(
+  reviewerConfig?: ReviewOptions<z.ZodType>['reviewerConfig'],
+  toolName?: ReviewToolName,
+): ReviewerProvider {
   const providerName = resolveProviderName(reviewerConfig?.provider);
   const hasEphemeralKey = !!reviewerConfig?.api_key;
+  const resolvedModel = resolveModelForTool(reviewerConfig?.model, toolName);
 
   // Per-request api_key → skip cache (ephemeral credential, don't leak into shared cache)
   if (!hasEphemeralKey) {
-    const cacheKey = getProviderCacheKey(providerName, reviewerConfig);
+    const cacheKey = getProviderCacheKey(providerName, resolvedModel, reviewerConfig);
     if (providerCache.has(cacheKey)) {
       return providerCache.get(cacheKey)!;
     }
@@ -115,7 +147,7 @@ function getProvider(reviewerConfig?: ReviewOptions<z.ZodType>['reviewerConfig']
   const constructorConfig = {
     apiKey,
     baseUrl: reviewerConfig?.base_url,
-    model: reviewerConfig?.model,
+    model: resolvedModel,
     temperature: reviewerConfig?.temperature,
     topP: reviewerConfig?.top_p,
   };
@@ -156,11 +188,11 @@ function getProvider(reviewerConfig?: ReviewOptions<z.ZodType>['reviewerConfig']
       providerCache.delete(oldestKey);
       console.error(`[duul] Provider cache full, evicted oldest entry`);
     }
-    const cacheKey = getProviderCacheKey(providerName, reviewerConfig);
+    const cacheKey = getProviderCacheKey(providerName, resolvedModel, reviewerConfig);
     providerCache.set(cacheKey, provider);
   }
 
-  console.error(`[duul] Created ${providerName} provider (model: ${reviewerConfig?.model ?? 'default'}${hasEphemeralKey ? ', ephemeral key' : ''})`);
+  console.error(`[duul] Created ${providerName} provider (model: ${resolvedModel ?? 'default'}${toolName ? `, tool: ${toolName}` : ''}${hasEphemeralKey ? ', ephemeral key' : ''})`);
   return provider;
 }
 
@@ -261,7 +293,7 @@ async function storeConversation(reviewId: string, turns: ConversationTurn[], wo
 export async function callReview<T extends z.ZodType>(
   options: ReviewOptions<T>,
 ): Promise<ReviewCallResult<z.infer<T>>> {
-  const provider = getProvider(options.reviewerConfig);
+  const provider = getProvider(options.reviewerConfig, options.toolName);
 
   // Log capability warnings for non-full-featured providers
   if (!provider.capabilities.toolCalling && options.workspaceScope?.root) {

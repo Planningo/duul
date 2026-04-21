@@ -18,9 +18,18 @@ export const ReviewerConfigSchema = z.object({
     .optional()
     .describe('Review provider. Default: env REVIEW_PROVIDER or "openai".'),
   model: z
-    .string()
+    .union([
+      z.string(),
+      z.object({
+        plan: z.string().optional(),
+        code: z.string().optional(),
+        partition: z.string().optional(),
+      }),
+    ])
     .optional()
-    .describe('Model to use. Default: env REVIEW_MODEL or provider default.'),
+    .describe(
+      'Model to use. Either a single string applied to all tools, or an object with per-tool overrides (plan/code/partition). Default: env REVIEW_MODEL or provider default.',
+    ),
   base_url: z
     .string()
     .optional()
@@ -52,6 +61,15 @@ export const IterationMetaOutputSchema = z.object({
   iteration_count: z.number().describe('Current iteration number (1-based) as reported by the caller.'),
   iteration_limit: z.number().describe('Maximum iterations allowed for this phase.'),
   iteration_limit_reached: z.boolean().describe('Whether the iteration limit has been reached.'),
+  cost_warning: z
+    .string()
+    .optional()
+    .nullable()
+    .describe(
+      'Soft warning string emitted once iteration_count crosses ~60% of iteration_limit. ' +
+        'Includes the current round cost so the orchestrator can decide whether to accept a near-verdict or escalate. ' +
+        'Null when below the threshold.',
+    ),
 });
 
 /**

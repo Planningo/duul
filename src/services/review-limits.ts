@@ -83,3 +83,32 @@ export function isIterationLimitExceeded(
   const limit = getIterationLimit(phase, requestMaxOverride);
   return callerIterationCount > limit;
 }
+
+const COST_WARNING_RATIO = 0.6;
+
+/**
+ * Emit a soft cost warning once iteration_count crosses ~60% of the limit.
+ * Uses the current round's estimated cost as a rough per-round figure so the
+ * orchestrator can decide whether to accept a near-verdict or escalate.
+ *
+ * Returns null when below the threshold, or when iteration_count is 0.
+ */
+export function computeCostWarning(
+  iterMeta: IterationMeta,
+  estimatedCostUsd: number | null,
+): string | null {
+  if (iterMeta.iteration_count <= 0) return null;
+  const trigger = Math.ceil(iterMeta.iteration_limit * COST_WARNING_RATIO);
+  if (iterMeta.iteration_count < trigger) return null;
+
+  const costStr =
+    estimatedCostUsd !== null && estimatedCostUsd > 0
+      ? `~$${estimatedCostUsd.toFixed(4)}`
+      : 'an unknown amount';
+
+  return (
+    `This is iteration ${iterMeta.iteration_count} of ${iterMeta.iteration_limit}. ` +
+    `Each round costs ${costStr}. ` +
+    `Consider accepting REVISE-with-minor-issues or escalating to human.`
+  );
+}
