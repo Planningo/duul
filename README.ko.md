@@ -1,5 +1,11 @@
 # DUUL
 
+[![npm version](https://img.shields.io/npm/v/@planningo/duul.svg)](https://www.npmjs.com/package/@planningo/duul)
+[![npm downloads](https://img.shields.io/npm/dm/@planningo/duul.svg)](https://www.npmjs.com/package/@planningo/duul)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/Planningo/duul/actions/workflows/ci.yml/badge.svg)](https://github.com/Planningo/duul/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/node/v/@planningo/duul.svg)](https://nodejs.org)
+
 **D**ual-phase **U**pfront-plan & **U**nit-verify **L**oop — LLM을 개발 계획 및 코드의 리뷰어로 활용하는 MCP 서버. OpenAI, Anthropic, Google, OpenRouter 및 OpenAI 호환 프로바이더를 지원합니다.
 
 > [English README](./README.md)
@@ -224,6 +230,31 @@ npm run build
 ```
 
 **의도한 방향은 약화가 아닌 강화입니다.** 계획 단계의 결함은 구현 전체로 증폭되므로 `plan`의 기본값은 여전히 강력한 모델에 유지해야 합니다. 이 기능은 `plan`은 기본값을 유지하고 `code_review`에 Opus처럼 더 강한 모델을 쓰고 싶은 사용자를 위한 것이지, `plan`을 약화시켜 비용을 줄이려는 용도가 아닙니다.
+
+---
+
+## 비용 & 성능
+
+이 레포에서 실제 DUUL을 돌리며 측정한 수치 (리뷰어 호출 42회, gpt-5.4, prompt caching 활성). 프로젝트 크기·리뷰 복잡도에 따라 달라지므로 대략적인 예산 가이드로 활용하세요.
+
+| 툴 | 호출당 평균 토큰 | 호출당 평균 비용 | 캐시 hit rate |
+|----|-----------------:|----------------:|--------------:|
+| `plan_review` | 100,966 | **$0.065** | 79% |
+| `code_review` | 179,837 | **$0.122** | 79% |
+| **전체 평균** | 132,890 | **$0.088** | 79% |
+
+일반적인 작업 (plan 1~3라운드 + code 1~2라운드)은 보통 **$0.30~$0.50** 정도의 리뷰어 비용이 듭니다.
+
+**비용 절감 요인:**
+- Anthropic / OpenAI prompt caching (반복 세션에서 약 30% 절감, cache read는 input의 0.1× 가격)
+- 도구별 모델 오버라이드 (`reviewer_config.model = { code: "claude-opus-4" }`로 code만 강화)
+- 옵션: 파일 읽기 예산 (`DUUL_MAX_REVIEWER_BYTES`)으로 비용 상한 강제
+
+**직접 측정하기:**
+```bash
+node scripts/token-report.mjs --plan max20 --all-time
+```
+`~/.duul/usage.jsonl`(MCP env에 `DUUL_DEBUG_TOKEN=1` 설정 시 로깅 활성)과 `~/.claude/projects/<encoded-cwd>/*.jsonl`을 합쳐서 Claude Code + 리뷰어 통합 breakdown을 보여줍니다.
 
 ---
 
