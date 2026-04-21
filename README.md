@@ -1,5 +1,11 @@
 # DUUL
 
+[![npm version](https://img.shields.io/npm/v/@planningo/duul.svg)](https://www.npmjs.com/package/@planningo/duul)
+[![npm downloads](https://img.shields.io/npm/dm/@planningo/duul.svg)](https://www.npmjs.com/package/@planningo/duul)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/Planningo/duul/actions/workflows/ci.yml/badge.svg)](https://github.com/Planningo/duul/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/node/v/@planningo/duul.svg)](https://nodejs.org)
+
 **D**ual-phase **U**pfront-plan & **U**nit-verify **L**oop — an MCP server that uses LLMs as peer reviewers for development plans and code. Supports OpenAI, Anthropic, Google, OpenRouter, and any OpenAI-compatible provider.
 
 > [한국어 README](./README.ko.md)
@@ -224,6 +230,31 @@ Each review request can include a `reviewer_config` object to override provider 
 ```
 
 **Intended direction: upgrade, not downgrade.** Plan-phase defects compound through implementation, so the default for `plan` should stay on a strong model. This knob is for users who want to spend MORE on `code_review` (e.g. use Opus for code while keeping plan on the default), not to save money by weakening `plan`.
+
+---
+
+## Cost & Performance
+
+Empirical numbers from real DUUL usage in this repo (42 reviewer calls, gpt-5.4, prompt caching enabled). Treat as a rough budgeting guide — your numbers will vary with project size and review complexity.
+
+| Tool | Avg tokens/call | Avg cost/call | Cache hit rate |
+|------|----------------:|--------------:|---------------:|
+| `plan_review` | 100,966 | **$0.065** | 79% |
+| `code_review` | 179,837 | **$0.122** | 79% |
+| **Combined avg** | 132,890 | **$0.088** | 79% |
+
+A typical task (1–3 plan rounds + 1–2 code rounds) usually lands around **$0.30–$0.50** in reviewer cost.
+
+**What drives cost down:**
+- Anthropic / OpenAI prompt caching (~30% reduction on iterating sessions; cache reads billed at 0.1× input rate)
+- Per-tool model override (`reviewer_config.model = { code: "claude-opus-4" }` to escalate code-only)
+- Optional file-read budget (`DUUL_MAX_REVIEWER_BYTES`) for hard cost ceilings
+
+**Measure your own usage:**
+```bash
+node scripts/token-report.mjs --plan max20 --all-time
+```
+Reads `~/.duul/usage.jsonl` (set `DUUL_DEBUG_TOKEN=1` in your MCP env to enable logging) and `~/.claude/projects/<encoded-cwd>/*.jsonl` for combined Claude Code + reviewer breakdown.
 
 ---
 
