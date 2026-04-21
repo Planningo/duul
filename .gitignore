@@ -4,3 +4,19 @@ build/
 .env.*
 .duul/
 .claude/settings.local.json
+
+# DUUL runtime state / per-project MCP config (may contain API keys)
+.duul-state.json
+.mcp.json
+
+# OS / editor noise
+.DS_Store
+
+# Credentials & secrets — defensive
+*.pem
+*.key
+id_rsa*
+*.p12
+*.pfx
+credentials.json
+auth.json
