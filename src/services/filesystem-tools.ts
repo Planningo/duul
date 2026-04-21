@@ -28,7 +28,8 @@ export interface ReviewerByteBudget {
  * Resolve the reviewer file-read cap from env. Opt-in: if DUUL_MAX_REVIEWER_BYTES
  * is unset/invalid, returns Infinity (no cap). Measurements showed a 200KB default
  * was too tight — ~1/3 of code reviews hit the cap and spent extra rounds.
- * Cost-conscious users can set DUUL_MAX_REVIEWER_BYTES=200000 (or similar) explicitly.
+ * Cost-conscious setups can opt in explicitly; 200000–500000 is a reasonable
+ * starting range, tune based on typical review complexity (see README).
  */
 export function getMaxReviewerBytes(): number {
   const raw = process.env.DUUL_MAX_REVIEWER_BYTES;
@@ -94,7 +95,7 @@ export async function executeFilesystemTool(
         return `Unknown tool: ${toolName}`;
     }
 
-    if (budget) {
+    if (budget && Number.isFinite(budget.cap)) {
       budget.used += Buffer.byteLength(result, 'utf8');
     }
     return result;
