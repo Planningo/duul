@@ -1,5 +1,9 @@
 # DUUL
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Planningo/duul/master/DUUL.png" alt="DUUL — LLM 간 동료 리뷰" width="520" />
+</p>
+
 [![npm version](https://img.shields.io/npm/v/@planningo/duul.svg)](https://www.npmjs.com/package/@planningo/duul)
 [![npm downloads](https://img.shields.io/npm/dm/@planningo/duul.svg)](https://www.npmjs.com/package/@planningo/duul)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
