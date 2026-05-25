@@ -1,6 +1,6 @@
 {
   "name": "@planningo/duul",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DUUL — Dual-phase Upfront-plan & Unit-verify Loop. MCP server for LLM peer review of plans and code.",
   "type": "module",
   "main": "build/index.js",
