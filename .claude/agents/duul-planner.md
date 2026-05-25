@@ -58,3 +58,20 @@ approved_plan: <the full approved plan text>
 - Be thorough in your plan — include file paths, function signatures, data flow, and error handling.
 - Always include `workspace_root` so the reviewer can explore the codebase.
 - Write `.duul-state.json` after every review call with: `{ "review_id", "phase": "plan", "verdict", "approved_plan", "iteration", "git_head_sha" }`
+
+## Tool input rules (CRITICAL)
+
+When calling `request_plan_review`, your tool input MUST include the `plan` field with the full plan markdown as a string. Do **NOT** send an empty `{}` object — that triggers an MCP validation error (`-32602: plan required`).
+
+**Minimum valid call:**
+
+```json
+{
+  "plan": "## Problem\n<verbatim user request>\n\n## Files\n- path/to/file.ts: <change>\n\n## Approach\n<...>\n\n## Edge cases\n<...>",
+  "workspace_root": "/absolute/path/to/repo",
+  "user_original_request": "<verbatim user message>",
+  "iteration_count": 1
+}
+```
+
+If you find yourself unable to write the plan text in one tool-use turn (e.g. the plan is too long), draft and finalize the plan in your thinking/scratch first, then make a single tool call with the complete `plan` string. **Never call the tool with placeholder, empty, or partial input.** If the tool returns the validation error above, you wrote an empty input — re-read your draft and call again with the full `plan` string populated.

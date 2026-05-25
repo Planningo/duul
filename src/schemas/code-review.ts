@@ -13,11 +13,21 @@ export const DependenciesSchema = z.object({
 });
 
 export const CodeReviewInputSchema = z.object({
-  code: z.string().min(1, 'code must not be empty').describe('The code to review'),
+  code: z
+    .string()
+    .min(1, 'code must not be empty')
+    .describe(
+      'REQUIRED. The full code being reviewed (markdown code block or raw source). Must NOT be omitted or empty. ' +
+        'For multi-file diffs, concatenate all changed code with file headers. ' +
+        'Pass actual code content here — never call this tool with an empty object.',
+    ),
   approved_plan: z
     .string()
     .min(1, 'approved_plan must not be empty')
-    .describe('The previously approved plan this code implements'),
+    .describe(
+      'REQUIRED. Full text of the plan approved in Phase 1. Must NOT be omitted. ' +
+        'Pass the entire approved plan content (markdown) so the reviewer can verify the code matches it.',
+    ),
   file_path: z.string().optional().describe('File path for contextual feedback'),
   dependencies: DependenciesSchema.optional().describe('Related library version info'),
   relevant_code: z
