@@ -31,7 +31,14 @@ export const ProjectContextSchema = z.object({
 });
 
 export const PlanReviewInputSchema = z.object({
-  plan: z.string().min(1, 'plan must not be empty').describe('Detailed implementation plan'),
+  plan: z
+    .string()
+    .min(1, 'plan must not be empty')
+    .describe(
+      'REQUIRED. Full implementation plan text (markdown). Must NOT be omitted or empty. ' +
+        'Include: problem statement (quote user request), files to create/modify with paths, ' +
+        'approach, edge cases, dependencies. Pass actual plan content here — never call this tool with an empty object.',
+    ),
   project_context: ProjectContextSchema.optional().describe('Structured project context'),
   constraints: z
     .array(z.string())

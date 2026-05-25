@@ -23,15 +23,38 @@ export function registerCodeReviewTool(server: McpServer): void {
     {
       title: 'DUUL Code Review (Strict QA)',
       description:
-        'DUUL Phase 2: Submit code for review by an LLM acting as a Strict QA Engineer. ' +
-        'Requires the approved plan for context. Returns blocking issues, vulnerabilities, ' +
-        'and optionally an optimized code snippet, or approval.',
+        'DUUL Phase 2: Submit code for strict QA review. ' +
+        'REQUIRED fields: code (the full code being reviewed — do NOT leave empty), approved_plan (the Phase 1 approved plan text). ' +
+        'Optional: workspace_root, file_path, changed_files, artifact_refs, previous_review_id, iteration_count. ' +
+        'NEVER call with an empty object — populate code and approved_plan with actual content before invoking. ' +
+        'Returns blocking issues, vulnerabilities, optimized snippet, or APPROVE verdict.',
       inputSchema: CodeReviewInputSchema,
       outputSchema: CodeReviewMcpOutputSchema,
     },
     async (input) => {
       try {
         const args = input as CodeReviewInput;
+
+        if (
+          !args ||
+          typeof args.code !== 'string' ||
+          args.code.trim().length < 5 ||
+          typeof args.approved_plan !== 'string' ||
+          args.approved_plan.trim().length < 20
+        ) {
+          const message =
+            'ERROR: `code` and `approved_plan` fields are both required. ' +
+            '`code` must contain the actual code being reviewed (min 5 chars). ' +
+            '`approved_plan` must contain the full plan text approved in Phase 1 (min 20 chars). ' +
+            'You called request_code_review with missing or empty content. ' +
+            'Retry with: { "code": "<your code>", "approved_plan": "<plan text>", "workspace_root": "<absolute path>", "iteration_count": 1 }. ' +
+            'Do NOT call this tool again with an empty input.';
+          console.error(`[duul] code-review rejected: missing/empty code or approved_plan field`);
+          return {
+            content: [{ type: 'text' as const, text: message }],
+            isError: true,
+          };
+        }
         const iterMeta = computeIterationMeta('code', args.iteration_count, args.max_review_iterations);
 
         // Short-circuit if iteration limit exceeded

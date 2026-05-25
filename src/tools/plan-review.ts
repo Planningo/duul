@@ -23,14 +23,30 @@ export function registerPlanReviewTool(server: McpServer): void {
     {
       title: 'DUUL Plan Review (Senior Architect)',
       description:
-        'DUUL Phase 1: Submit a development plan for review by an LLM acting as a Senior Architect. ' +
-        'Returns structured feedback with blocking issues, edge cases, and implementation checklist, or approval.',
+        'DUUL Phase 1: Submit an implementation plan for senior-architect review. ' +
+        'REQUIRED fields: plan (full plan markdown — do NOT leave empty), workspace_root (absolute path). ' +
+        'Optional: project_context, changed_files, artifact_refs, user_original_request, previous_review_id, iteration_count. ' +
+        'NEVER call with an empty object — populate plan with your actual plan text before invoking. ' +
+        'Returns blocking issues, edge cases, implementation checklist, or APPROVE verdict.',
       inputSchema: PlanReviewInputSchema,
       outputSchema: PlanReviewMcpOutputSchema,
     },
     async (input) => {
       try {
         const args = input as PlanReviewInput;
+
+        if (!args || typeof args.plan !== 'string' || args.plan.trim().length < 20) {
+          const message =
+            'ERROR: `plan` field is required and must contain the full plan markdown (at least 20 chars). ' +
+            'You called request_plan_review with missing or empty plan content. ' +
+            'Retry with: { "plan": "<your complete plan text>", "workspace_root": "<absolute path>", "user_original_request": "<verbatim user message>", "iteration_count": 1 }. ' +
+            'Do NOT call this tool again with an empty input.';
+          console.error(`[duul] plan-review rejected: missing/empty plan field`);
+          return {
+            content: [{ type: 'text' as const, text: message }],
+            isError: true,
+          };
+        }
         const iterMeta = computeIterationMeta('plan', args.iteration_count, args.max_review_iterations);
 
         // Short-circuit if iteration limit exceeded

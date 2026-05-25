@@ -5,10 +5,17 @@ export const ExecutionPartitionInputSchema = z.object({
   approved_plan: z
     .string()
     .min(1, 'approved_plan must not be empty')
-    .describe('The previously approved plan to partition into execution units'),
+    .describe(
+      'REQUIRED. Full text of the approved plan to partition into subtasks. Must NOT be omitted or empty. ' +
+        'Pass the entire approved plan markdown so the partitioner can analyze dependencies and split work.',
+    ),
   workspace_root: z
     .string()
-    .describe('Absolute path to the workspace root directory'),
+    .min(1, 'workspace_root must not be empty')
+    .describe(
+      'REQUIRED. Absolute path to the workspace root directory. Must NOT be omitted. ' +
+        'Example: "/Users/me/project". The partitioner uses this to verify file paths exist.',
+    ),
   working_directories: z
     .array(z.string())
     .optional()

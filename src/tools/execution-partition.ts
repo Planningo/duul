@@ -20,15 +20,38 @@ export function registerExecutionPartitionTool(server: McpServer): void {
     {
       title: 'DUUL Execution Partition (Project Manager)',
       description:
-        'DUUL optional: Partition an approved plan into executable subtasks with dependency graph, ' +
-        'spawn strategy, and handoff contracts. Use after plan review approval to ' +
-        'determine whether work can be parallelized across multiple agents/workspaces.',
+        'DUUL optional: Partition an approved plan into executable subtasks. ' +
+        'REQUIRED fields: approved_plan (full plan markdown — do NOT leave empty), workspace_root (absolute path). ' +
+        'Optional: working_directories, changed_files, entrypoints, artifact_refs, max_parallelism, iteration_count. ' +
+        'NEVER call with an empty object — populate approved_plan with actual plan text before invoking. ' +
+        'Returns dependency graph, spawn strategy, and handoff contracts.',
       inputSchema: ExecutionPartitionInputSchema,
       outputSchema: ExecutionPartitionMcpOutputSchema,
     },
     async (input) => {
       try {
         const args = input as ExecutionPartitionInput;
+
+        if (
+          !args ||
+          typeof args.approved_plan !== 'string' ||
+          args.approved_plan.trim().length < 20 ||
+          typeof args.workspace_root !== 'string' ||
+          args.workspace_root.trim().length === 0
+        ) {
+          const message =
+            'ERROR: `approved_plan` and `workspace_root` fields are both required. ' +
+            '`approved_plan` must contain the full plan text (min 20 chars). ' +
+            '`workspace_root` must be an absolute path. ' +
+            'You called request_execution_partition with missing or empty content. ' +
+            'Retry with: { "approved_plan": "<plan text>", "workspace_root": "<absolute path>" }. ' +
+            'Do NOT call this tool again with an empty input.';
+          console.error(`[duul] execution-partition rejected: missing/empty approved_plan or workspace_root`);
+          return {
+            content: [{ type: 'text' as const, text: message }],
+            isError: true,
+          };
+        }
         const iterMeta = computeIterationMeta('partition', args.iteration_count, args.max_review_iterations);
 
         // Short-circuit if iteration limit exceeded
