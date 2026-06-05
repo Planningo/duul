@@ -4,16 +4,25 @@ import { ArtifactRefSchema, ReviewerConfigSchema, IterationMetaOutputSchema, Tok
 export const ExecutionPartitionInputSchema = z.object({
   approved_plan: z
     .string()
-    .min(1, 'approved_plan must not be empty')
+    .optional()
     .describe(
-      'REQUIRED. Full text of the approved plan to partition into subtasks. Must NOT be omitted or empty. ' +
-        'Pass the entire approved plan markdown so the partitioner can analyze dependencies and split work.',
+      'Full text of the approved plan to partition into subtasks. REQUIRED unless approved_plan_file is provided. ' +
+        'Pass the entire approved plan markdown so the partitioner can analyze dependencies and split work. ' +
+        'If the plan is large, prefer approved_plan_file — inlining a very large string here can make the tool call fail to serialize.',
+    ),
+  approved_plan_file: z
+    .string()
+    .optional()
+    .describe(
+      'Relative path (within workspace_root) to a markdown file containing the approved plan, ' +
+        'e.g. ".duul/plan.md". Use this instead of inlining `approved_plan` when it is large. ' +
+        'Exactly one of `approved_plan` or `approved_plan_file` is required. Must be a relative path.',
     ),
   workspace_root: z
     .string()
-    .min(1, 'workspace_root must not be empty')
+    .optional()
     .describe(
-      'REQUIRED. Absolute path to the workspace root directory. Must NOT be omitted. ' +
+      'Absolute path to the workspace root directory. REQUIRED (enforced by the handler). ' +
         'Example: "/Users/me/project". The partitioner uses this to verify file paths exist.',
     ),
   working_directories: z

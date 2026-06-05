@@ -86,25 +86,27 @@ async function safePath(
     throw new Error(`Symlink escape detected: ${requestedPath} resolves outside project root`);
   }
 
-  // Block sensitive files
-  const lower = rel.toLowerCase();
-  if (lower.includes('.env') && !lower.endsWith('.example')) {
-    throw new Error(`Access denied (sensitive file): ${requestedPath}`);
-  }
-  if (rel === 'node_modules' || rel.startsWith('node_modules/') || rel.startsWith('node_modules\\')) {
-    throw new Error('Access denied: node_modules');
-  }
-
-  // Block additional paths (.git, build, dist)
-  const topSegment = rel.split('/')[0].split('\\')[0];
-  if (BLOCKED_PATHS.includes(topSegment)) {
-    throw new Error(`Access denied: ${topSegment}`);
-  }
-
-  // Block large file extensions (.log)
-  if (BLOCKED_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
-    throw new Error(`Access denied (blocked extension): ${requestedPath}`);
-  }
+  // Block sensitive files — checked against BOTH the logical requested path and
+  // the symlink-resolved real path, so an in-root symlink with an innocuous name
+  // cannot point at an in-root secret (e.g. innocent.txt -> .env, gitcfg.txt -> .git/config).
+  const assertNotSensitive = (candidate: string): void => {
+    const low = candidate.toLowerCase();
+    if (low.includes('.env') && !low.endsWith('.example')) {
+      throw new Error(`Access denied (sensitive file): ${requestedPath}`);
+    }
+    if (candidate === 'node_modules' || candidate.startsWith('node_modules/') || candidate.startsWith('node_modules\\')) {
+      throw new Error('Access denied: node_modules');
+    }
+    const topSegment = candidate.split('/')[0].split('\\')[0];
+    if (BLOCKED_PATHS.includes(topSegment)) {
+      throw new Error(`Access denied: ${topSegment}`);
+    }
+    if (BLOCKED_EXTENSIONS.some((ext) => low.endsWith(ext))) {
+      throw new Error(`Access denied (blocked extension): ${requestedPath}`);
+    }
+  };
+  assertNotSensitive(rel);
+  assertNotSensitive(realRel);
 
   return realResolved;
 }
@@ -327,6 +329,44 @@ export async function readProjectFile(
     );
   }
   return readFile(resolved, 'utf-8');
+}
+
+/**
+ * Resolve a large text argument that may be supplied inline OR via a file path.
+ *
+ * Large MCP tool arguments (full plan/code markdown) are the single input that
+ * tool-calling models most often fail to serialize: when the intended value is
+ * big, the model can emit an empty `{}` for the whole argument object, which the
+ * MCP SDK then rejects with a `-32602` validation error — and the caller loops.
+ * Writing the content to a file with a normal Write call (a small, reliable
+ * tool schema) and passing a short relative path here sidesteps that failure.
+ *
+ * Returns the resolved text, or undefined when neither source yields content.
+ * Throws (with a labelled message) only when a file path was given but could
+ * not be read — the tool handler converts that into actionable retry guidance.
+ */
+export async function resolveInlineOrFile(opts: {
+  inline?: string | null;
+  file?: string | null;
+  scope: WorkspaceScope | null;
+  label: string;
+}): Promise<string | undefined> {
+  const { inline, file, scope, label } = opts;
+  if (typeof inline === 'string' && inline.trim().length > 0) {
+    return inline;
+  }
+  if (typeof file === 'string' && file.trim().length > 0) {
+    if (!scope) {
+      throw new Error(
+        `${label}_file was provided ("${file}") but no workspace_root (or project_root) is set. ` +
+          'Pass workspace_root so the file can be read.',
+      );
+    }
+    // Bypass tracked_only: the *_file artifact is the caller's own scratch file
+    // (e.g. .duul/plan.md), which is typically untracked by git.
+    return readProjectFile(scope.root, file, { ...scope, trackedOnly: false });
+  }
+  return undefined;
 }
 
 export async function listProjectDirectory(

@@ -33,11 +33,22 @@ export const ProjectContextSchema = z.object({
 export const PlanReviewInputSchema = z.object({
   plan: z
     .string()
-    .min(1, 'plan must not be empty')
+    .optional()
     .describe(
-      'REQUIRED. Full implementation plan text (markdown). Must NOT be omitted or empty. ' +
+      'Full implementation plan text (markdown). REQUIRED unless plan_file is provided. ' +
         'Include: problem statement (quote user request), files to create/modify with paths, ' +
-        'approach, edge cases, dependencies. Pass actual plan content here — never call this tool with an empty object.',
+        'approach, edge cases, dependencies. ' +
+        'If the plan is large, prefer writing it to a file and passing plan_file instead — ' +
+        'inlining a very large plan string here can make the tool call fail to serialize.',
+    ),
+  plan_file: z
+    .string()
+    .optional()
+    .describe(
+      'Relative path (within workspace_root) to a markdown file containing the full plan, ' +
+        'e.g. ".duul/plan.md". Use this instead of inlining `plan` when the plan is large: ' +
+        'write the plan to the file first, then pass its path here. ' +
+        'Exactly one of `plan` or `plan_file` is required. Requires workspace_root. Must be a relative path.',
     ),
   project_context: ProjectContextSchema.optional().describe('Structured project context'),
   constraints: z

@@ -8,7 +8,7 @@ import {
 import { getExecutionPartitionSystemPrompt, formatExecutionPartitionUserMessage } from '../prompts/execution-partition-system.js';
 import { callReview } from '../services/reviewer.js';
 import type { TokenUsage } from '../services/reviewer.js';
-import { resolveWorkspaceScope } from '../services/filesystem.js';
+import { resolveWorkspaceScope, resolveInlineOrFile } from '../services/filesystem.js';
 import { computeIterationMeta, isIterationLimitExceeded, computeCostWarning } from '../services/review-limits.js';
 import { logUsage } from '../services/usage-logger.js';
 
@@ -21,9 +21,10 @@ export function registerExecutionPartitionTool(server: McpServer): void {
       title: 'DUUL Execution Partition (Project Manager)',
       description:
         'DUUL optional: Partition an approved plan into executable subtasks. ' +
-        'REQUIRED fields: approved_plan (full plan markdown — do NOT leave empty), workspace_root (absolute path). ' +
+        'Provide the plan EITHER inline via `approved_plan` OR (preferred for large plans) via `approved_plan_file` ' +
+        '(relative path, e.g. ".duul/plan.md"). `workspace_root` (absolute path) is required. ' +
+        'Exactly one of approved_plan/approved_plan_file is required. ' +
         'Optional: working_directories, changed_files, entrypoints, artifact_refs, max_parallelism, iteration_count. ' +
-        'NEVER call with an empty object — populate approved_plan with actual plan text before invoking. ' +
         'Returns dependency graph, spawn strategy, and handoff contracts.',
       inputSchema: ExecutionPartitionInputSchema,
       outputSchema: ExecutionPartitionMcpOutputSchema,
@@ -32,16 +33,35 @@ export function registerExecutionPartitionTool(server: McpServer): void {
       try {
         const args = input as ExecutionPartitionInput;
 
+        const scope = resolveWorkspaceScope(args);
+
+        // Resolve approved_plan from inline value or approved_plan_file escape hatch.
+        let approvedPlanText: string | undefined;
+        try {
+          approvedPlanText = await resolveInlineOrFile({
+            inline: args.approved_plan,
+            file: args.approved_plan_file,
+            scope,
+            label: 'approved_plan',
+          });
+        } catch (readErr: unknown) {
+          const reason = readErr instanceof Error ? readErr.message : String(readErr);
+          console.error(`[duul] execution-partition approved_plan_file read failed: ${reason}`);
+          return {
+            content: [{ type: 'text' as const, text: `ERROR: could not read approved_plan_file. ${reason}` }],
+            isError: true,
+          };
+        }
+
         if (
-          !args ||
-          typeof args.approved_plan !== 'string' ||
-          args.approved_plan.trim().length < 20 ||
+          typeof approvedPlanText !== 'string' ||
+          approvedPlanText.trim().length < 20 ||
           typeof args.workspace_root !== 'string' ||
           args.workspace_root.trim().length === 0
         ) {
           const message =
-            'ERROR: `approved_plan` and `workspace_root` fields are both required. ' +
-            '`approved_plan` must contain the full plan text (min 20 chars). ' +
+            'ERROR: `approved_plan` and `workspace_root` are both required. ' +
+            '`approved_plan` must contain the full plan text (min 20 chars) — inline it, or pass approved_plan_file (e.g. ".duul/plan.md"). ' +
             '`workspace_root` must be an absolute path. ' +
             'You called request_execution_partition with missing or empty content. ' +
             'Retry with: { "approved_plan": "<plan text>", "workspace_root": "<absolute path>" }. ' +
@@ -70,7 +90,7 @@ export function registerExecutionPartitionTool(server: McpServer): void {
             subtasks: [{
               id: 'full-plan',
               title: 'Execute full plan serially (limit reached)',
-              goal: args.approved_plan.slice(0, 200) + '...',
+              goal: approvedPlanText.slice(0, 200) + '...',
               can_run_in_parallel: false,
               depends_on: [],
               workspace_name_hint: 'main',
@@ -106,10 +126,9 @@ export function registerExecutionPartitionTool(server: McpServer): void {
           };
         }
 
-        const scope = resolveWorkspaceScope(args);
         const systemPrompt = getExecutionPartitionSystemPrompt();
         const userMessage = formatExecutionPartitionUserMessage(
-          args.approved_plan,
+          approvedPlanText,
           args.constraints,
           {
             changedFiles: args.changed_files,
@@ -140,7 +159,7 @@ export function registerExecutionPartitionTool(server: McpServer): void {
             subtasks: [{
               id: 'full-plan',
               title: 'Execute full plan serially',
-              goal: args.approved_plan.slice(0, 200) + '...',
+              goal: approvedPlanText.slice(0, 200) + '...',
               can_run_in_parallel: false,
               depends_on: [],
               workspace_name_hint: 'main',

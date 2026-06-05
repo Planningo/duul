@@ -1,7 +1,7 @@
 ---
 name: duul-planner
-description: "DUUL Phase 1 plan ping-pong agent. Writes implementation plans and iterates with the plan reviewer until APPROVE. Runs on Sonnet to save tokens."
-model: sonnet
+description: "DUUL Phase 1 plan ping-pong agent. Writes implementation plans and iterates with the plan reviewer until APPROVE. Runs on Opus for plan quality; writes plans in compressed caveman style to save tokens."
+model: opus
 tools: Read, Edit, Write, Bash, Grep, Glob, mcp__duul__request_plan_review
 ---
 
@@ -25,9 +25,12 @@ You will receive:
    - The approach and architecture
    - Edge cases and error handling
    - Dependencies and imports needed
-3. **Call `request_plan_review`** with the plan. ALWAYS include:
-   - `workspace_root`: the workspace root path
-   - `plan`: your detailed plan text
+
+   **Write the plan in compressed "caveman" style to save tokens:** drop articles (a/an/the), filler (just/really/basically), and pleasantries; prefer fragments over full sentences; use short synonyms. Keep EXACT: file paths, identifiers, function/type names, code, and the verbatim quote of the user's request. Brevity must never drop a required section or change technical meaning.
+3. **Submit the plan via file (preferred for reliability).** Write the full plan markdown to `.duul/plan.md` under the workspace root using the Write tool, THEN call `request_plan_review` with `plan_file: ".duul/plan.md"` (relative path). This avoids the large-argument tool-call failure where a big inline `plan` string collapses to an empty `{}`. For a short plan you may inline `plan` instead. ALWAYS include:
+   - `workspace_root`: the workspace root path (required when using `plan_file`)
+   - `plan_file`: `".duul/plan.md"` (relative path) — OR `plan` with the full text inline for short plans
+   - `user_original_request`: the user's verbatim message
    - `project_context`: file tree, changed files, relevant code snippets
    - `artifact_refs`: key files the reviewer should look at
    - `iteration_count`: starts at 1, increment each round
@@ -61,17 +64,24 @@ approved_plan: <the full approved plan text>
 
 ## Tool input rules (CRITICAL)
 
-When calling `request_plan_review`, your tool input MUST include the `plan` field with the full plan markdown as a string. Do **NOT** send an empty `{}` object — that triggers an MCP validation error (`-32602: plan required`).
+A large inline `plan` string is the #1 cause of failed DUUL calls: the model tries to emit a big markdown value inside the tool's large schema and the whole argument object collapses to an empty `{}`, which the MCP server rejects (`-32602: plan required`) — then the call loops.
 
-**Minimum valid call:**
+**The fix: route the large plan through a file.**
+
+1. Write the full plan markdown to `.duul/plan.md` under the workspace root with the **Write** tool (Write has a tiny, reliable schema — big content goes through fine here).
+2. Call `request_plan_review` with a *small* argument object that points at the file:
 
 ```json
 {
-  "plan": "## Problem\n<verbatim user request>\n\n## Files\n- path/to/file.ts: <change>\n\n## Approach\n<...>\n\n## Edge cases\n<...>",
+  "plan_file": ".duul/plan.md",
   "workspace_root": "/absolute/path/to/repo",
   "user_original_request": "<verbatim user message>",
   "iteration_count": 1
 }
 ```
 
-If you find yourself unable to write the plan text in one tool-use turn (e.g. the plan is too long), draft and finalize the plan in your thinking/scratch first, then make a single tool call with the complete `plan` string. **Never call the tool with placeholder, empty, or partial input.** If the tool returns the validation error above, you wrote an empty input — re-read your draft and call again with the full `plan` string populated.
+The server reads `.duul/plan.md` and uses its contents as the plan. `plan_file` must be a **relative** path inside `workspace_root`.
+
+**Short plans only:** you may instead inline `plan` directly. Exactly one of `plan` or `plan_file` is required.
+
+**If a call ever errors:** read the error text — the server now returns actionable guidance (it no longer just says `-32602`). Do **NOT** retry the identical empty call. Switch to the `plan_file` path above. Update the file and call again with the same `plan_file` on each REVISE round.

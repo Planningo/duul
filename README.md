@@ -25,7 +25,7 @@ DUUL is a [Model Context Protocol](https://modelcontextprotocol.io/) server that
 
 The calling agent iterates with the reviewer on each phase until it receives an `APPROVE` verdict, then moves to the next phase. This creates a cross-model peer review workflow where one LLM checks the work of another.
 
-**Token-efficient by design:** Phase 1 (plan authoring) is delegated to a Sonnet-class subagent, since the reviewer catches any plan issues anyway. Phase 2 (code implementation) stays on Opus for maximum code quality. This typically reduces Phase 1 token costs by ~80%.
+**Token-efficient by design:** Both phases run on Opus for maximum quality. To keep cost down, the Phase 1 planner writes plans in compressed "caveman" style and submits large plans via a file (`plan_file`) instead of a giant inline string, and the reviewer emits its findings in the same compressed form.
 
 The reviewer has **workspace-aware file exploration** -- when given a `workspace_root`, it can autonomously browse the codebase using 7 built-in tools (read files, search code, list directories, etc.) to make informed review decisions instead of speculating.
 
@@ -268,9 +268,9 @@ Reads `~/.duul/usage.jsonl` (set `DUUL_DEBUG_TOKEN=1` in your MCP env to enable 
 
 ```mermaid
 flowchart TD
-    Start(["User: 'run DUUL'"]):::trigger --> Plan["Write implementation plan\n(Sonnet subagent)"]:::sonnet
+    Start(["User: 'run DUUL'"]):::trigger --> Plan["Write implementation plan\n(Opus subagent)"]:::planner
 
-    subgraph Phase1["Phase 1: Plan Ping-Pong — Sonnet (max 7 iterations)"]
+    subgraph Phase1["Phase 1: Plan Ping-Pong — Opus (max 7 iterations)"]
         Plan --> PR["request_plan_review"]
         PR --> IterCheck1{iteration\nlimit?}
         IterCheck1 -- "exceeded" --> Human1["⏸ requires_human_review: true"]
@@ -305,7 +305,7 @@ flowchart TD
     classDef trigger fill:#e1f5fe,stroke:#0288d1,color:#01579b
     classDef approved fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
     classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20,stroke-width:2px
-    classDef sonnet fill:#fff3e0,stroke:#f57c00,color:#e65100
+    classDef planner fill:#fff3e0,stroke:#f57c00,color:#e65100
     classDef opus fill:#ede7f6,stroke:#7b1fa2,color:#4a148c
 ```
 

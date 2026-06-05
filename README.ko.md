@@ -25,7 +25,7 @@ DUUL은 [Model Context Protocol](https://modelcontextprotocol.io/) 서버로, MC
 
 호출 에이전트는 각 단계에서 `APPROVE` 판정을 받을 때까지 리뷰어와 반복하고, 이후 다음 단계로 진행합니다. 이를 통해 한 LLM이 다른 LLM의 작업을 검증하는 크로스 모델 리뷰 워크플로우를 만듭니다.
 
-**토큰 효율 설계:** 1단계(계획 작성)는 Sonnet급 서브에이전트에 위임합니다 — 리뷰어가 계획의 문제를 잡아주므로 충분합니다. 2단계(코드 구현)는 최대 코드 품질을 위해 Opus에서 실행됩니다. 이를 통해 1단계 토큰 비용이 약 80% 절감됩니다.
+**토큰 효율 설계:** 두 단계 모두 최대 품질을 위해 Opus에서 실행됩니다. 비용을 낮추기 위해, 1단계 플래너는 압축된 "케이브맨" 스타일로 계획을 작성하고, 큰 계획은 거대한 인라인 문자열 대신 파일(`plan_file`)로 제출하며, 리뷰어도 같은 압축 형식으로 결과를 출력합니다.
 
 리뷰어는 **워크스페이스 인식 파일 탐색** 기능을 갖추고 있어, `workspace_root`가 주어지면 7개의 내장 도구(파일 읽기, 코드 검색, 디렉토리 목록 등)를 사용하여 정보에 기반한 리뷰 결정을 내립니다.
 
@@ -268,9 +268,9 @@ node scripts/token-report.mjs --plan max20 --all-time
 
 ```mermaid
 flowchart TD
-    Start(["사용자: 'DUUL로 개발 진행해줘'"]):::trigger --> Plan["구현 계획 작성\n(Sonnet 서브에이전트)"]:::sonnet
+    Start(["사용자: 'DUUL로 개발 진행해줘'"]):::trigger --> Plan["구현 계획 작성\n(Opus 서브에이전트)"]:::planner
 
-    subgraph Phase1["1단계: 계획 핑퐁 — Sonnet (최대 7회 반복)"]
+    subgraph Phase1["1단계: 계획 핑퐁 — Opus (최대 7회 반복)"]
         Plan --> PR["request_plan_review"]
         PR --> IterCheck1{반복\n제한?}
         IterCheck1 -- "초과" --> Human1["⏸ requires_human_review: true"]
@@ -305,7 +305,7 @@ flowchart TD
     classDef trigger fill:#e1f5fe,stroke:#0288d1,color:#01579b
     classDef approved fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
     classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20,stroke-width:2px
-    classDef sonnet fill:#fff3e0,stroke:#f57c00,color:#e65100
+    classDef planner fill:#fff3e0,stroke:#f57c00,color:#e65100
     classDef opus fill:#ede7f6,stroke:#7b1fa2,color:#4a148c
 ```
 
