@@ -8,7 +8,7 @@ import {
 import { getPlanReviewSystemPrompt, formatPlanReviewUserMessage } from '../prompts/plan-review-system.js';
 import { callReview } from '../services/reviewer.js';
 import type { TokenUsage } from '../services/reviewer.js';
-import { resolveWorkspaceScope, getGitDiff } from '../services/filesystem.js';
+import { resolveWorkspaceScope, getGitDiff, resolveInlineOrFile } from '../services/filesystem.js';
 import { computeIterationMeta, isIterationLimitExceeded, computeCostWarning } from '../services/review-limits.js';
 import { logUsage } from '../services/usage-logger.js';
 import { applyGates } from '../services/review-gates.js';
@@ -24,9 +24,10 @@ export function registerPlanReviewTool(server: McpServer): void {
       title: 'DUUL Plan Review (Senior Architect)',
       description:
         'DUUL Phase 1: Submit an implementation plan for senior-architect review. ' +
-        'REQUIRED fields: plan (full plan markdown — do NOT leave empty), workspace_root (absolute path). ' +
+        'Provide the plan EITHER inline via `plan` OR (preferred for large plans) by writing it to a file ' +
+        'and passing `plan_file` (relative path, e.g. ".duul/plan.md") plus `workspace_root`. ' +
+        'Exactly one of plan/plan_file is required. ' +
         'Optional: project_context, changed_files, artifact_refs, user_original_request, previous_review_id, iteration_count. ' +
-        'NEVER call with an empty object — populate plan with your actual plan text before invoking. ' +
         'Returns blocking issues, edge cases, implementation checklist, or APPROVE verdict.',
       inputSchema: PlanReviewInputSchema,
       outputSchema: PlanReviewMcpOutputSchema,
@@ -35,13 +36,29 @@ export function registerPlanReviewTool(server: McpServer): void {
       try {
         const args = input as PlanReviewInput;
 
-        if (!args || typeof args.plan !== 'string' || args.plan.trim().length < 20) {
+        const scope = resolveWorkspaceScope(args);
+
+        // Resolve the plan from inline `plan` or from `plan_file` (large-plan escape hatch).
+        let planText: string | undefined;
+        try {
+          planText = await resolveInlineOrFile({ inline: args.plan, file: args.plan_file, scope, label: 'plan' });
+        } catch (readErr: unknown) {
+          const reason = readErr instanceof Error ? readErr.message : String(readErr);
+          console.error(`[duul] plan-review plan_file read failed: ${reason}`);
+          return {
+            content: [{ type: 'text' as const, text: `ERROR: could not read plan_file. ${reason}` }],
+            isError: true,
+          };
+        }
+
+        if (typeof planText !== 'string' || planText.trim().length < 20) {
           const message =
-            'ERROR: `plan` field is required and must contain the full plan markdown (at least 20 chars). ' +
-            'You called request_plan_review with missing or empty plan content. ' +
-            'Retry with: { "plan": "<your complete plan text>", "workspace_root": "<absolute path>", "user_original_request": "<verbatim user message>", "iteration_count": 1 }. ' +
-            'Do NOT call this tool again with an empty input.';
-          console.error(`[duul] plan-review rejected: missing/empty plan field`);
+            'ERROR: a plan is required and must contain the full plan markdown (at least 20 chars). ' +
+            'You called request_plan_review without usable plan content. ' +
+            'Either inline it — { "plan": "<your complete plan text>", ... } — or, for a large plan, ' +
+            'write it to a file first and pass { "plan_file": ".duul/plan.md", "workspace_root": "<absolute path>" }. ' +
+            'Always include workspace_root and user_original_request. Do NOT call this tool again with an empty input.';
+          console.error(`[duul] plan-review rejected: missing/empty plan content`);
           return {
             content: [{ type: 'text' as const, text: message }],
             isError: true,
@@ -88,8 +105,6 @@ export function registerPlanReviewTool(server: McpServer): void {
           };
         }
 
-        const scope = resolveWorkspaceScope(args);
-
         // Auto-generate git diff if not provided
         let gitDiff = args.git_diff;
         if (!gitDiff && scope?.root && args.changed_files?.length) {
@@ -107,7 +122,7 @@ export function registerPlanReviewTool(server: McpServer): void {
 
         const systemPrompt = getPlanReviewSystemPrompt();
         const userMessage = formatPlanReviewUserMessage(
-          args.plan,
+          planText,
           args.project_context,
           args.constraints,
           args.notes_to_reviewer,

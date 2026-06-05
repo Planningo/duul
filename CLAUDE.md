@@ -15,11 +15,11 @@ Only activate when the user mentions **"DUUL"** (or **"두울"**) in their reque
 
 **CRITICAL:** This is a continuous, uninterrupted sequence. Do **NOT** pause between phases to ask the user "should I proceed?" or "should I implement?". The user already authorized the full loop when they requested DUUL.
 
-### Phase 1: Upfront-plan Ping-Pong (delegated to Sonnet subagent)
+### Phase 1: Upfront-plan Ping-Pong (delegated to Opus subagent)
 
-**To save tokens, Phase 1 runs on Sonnet via the `duul-planner` subagent.** The reviewer catches any plan issues, so Sonnet is sufficient for plan authoring.
+**Phase 1 runs on Opus via the `duul-planner` subagent for maximum plan quality.** To keep token cost down, the planner writes plans in compressed "caveman" style and submits the plan via a file (`plan_file`) rather than a large inline string.
 
-1. **Launch the `duul-planner` subagent** using the Agent tool with the user's requirements, workspace root path, and any relevant context. The subagent runs on Sonnet automatically (`model: sonnet` in its definition).
+1. **Launch the `duul-planner` subagent** using the Agent tool with the user's requirements, workspace root path, and any relevant context. The subagent runs on Opus automatically (`model: opus` in its definition).
 2. The subagent handles the entire plan ping-pong loop internally:
    - Writes a detailed implementation plan
    - Calls `request_plan_review` and iterates on REVISE feedback
@@ -35,7 +35,7 @@ Phase 2 runs on the **main agent (Opus)** for maximum code quality.
 
 7. **Write the actual code** to the project files based on the approved plan (received from the `duul-planner` subagent). Use your edit/write tools to make real changes.
 8. **Run lint if available.** Check `package.json` scripts for `lint`, `lint:fix`, or `eslint`, or check for a Makefile/config equivalent. If a lint command exists, run it with auto-fix (e.g. `npm run lint -- --fix` or `npx eslint --fix`). Fix any remaining errors before proceeding. If no lint is configured, skip this step.
-9. Call `request_code_review` with the code and the approved plan.
+9. Call `request_code_review` with the code and the approved plan. **For large content, avoid huge inline strings** (they can make the tool call collapse to an empty `{}` and fail validation): write the code to `.duul/code.md` and the plan to `.duul/plan.md`, then pass `code_file: ".duul/code.md"` and `approved_plan_file: ".duul/plan.md"` (relative paths) plus `workspace_root`. Inline `code`/`approved_plan` only for small content.
 10. If `review_status === "incomplete"`: check `missing_context` and retry with narrower scope.
 11. If `blocking_issues.length > 0` or `verdict === "REVISE"`: fix the code in the actual files, re-run lint if applicable, and call again.
 12. If `requires_human_review === true`: pause and ask the user.

@@ -8,7 +8,7 @@ import {
 import { getCodeReviewSystemPrompt, formatCodeReviewUserMessage } from '../prompts/code-review-system.js';
 import { callReview } from '../services/reviewer.js';
 import type { TokenUsage } from '../services/reviewer.js';
-import { resolveWorkspaceScope, getGitDiff } from '../services/filesystem.js';
+import { resolveWorkspaceScope, getGitDiff, resolveInlineOrFile } from '../services/filesystem.js';
 import { computeIterationMeta, isIterationLimitExceeded, computeCostWarning } from '../services/review-limits.js';
 import { logUsage } from '../services/usage-logger.js';
 import { applyGates } from '../services/review-gates.js';
@@ -24,9 +24,10 @@ export function registerCodeReviewTool(server: McpServer): void {
       title: 'DUUL Code Review (Strict QA)',
       description:
         'DUUL Phase 2: Submit code for strict QA review. ' +
-        'REQUIRED fields: code (the full code being reviewed — do NOT leave empty), approved_plan (the Phase 1 approved plan text). ' +
+        'Provide the code EITHER inline via `code` OR (preferred for large content) via `code_file`, and the ' +
+        'Phase 1 plan EITHER inline via `approved_plan` OR via `approved_plan_file` (relative paths, e.g. ".duul/code.md" / ".duul/plan.md") plus `workspace_root`. ' +
+        'Exactly one of code/code_file and one of approved_plan/approved_plan_file are required. ' +
         'Optional: workspace_root, file_path, changed_files, artifact_refs, previous_review_id, iteration_count. ' +
-        'NEVER call with an empty object — populate code and approved_plan with actual content before invoking. ' +
         'Returns blocking issues, vulnerabilities, optimized snippet, or APPROVE verdict.',
       inputSchema: CodeReviewInputSchema,
       outputSchema: CodeReviewMcpOutputSchema,
@@ -35,21 +36,43 @@ export function registerCodeReviewTool(server: McpServer): void {
       try {
         const args = input as CodeReviewInput;
 
+        const scope = resolveWorkspaceScope(args);
+
+        // Resolve code and approved_plan from inline values or *_file escape hatches.
+        let codeText: string | undefined;
+        let approvedPlanText: string | undefined;
+        try {
+          codeText = await resolveInlineOrFile({ inline: args.code, file: args.code_file, scope, label: 'code' });
+          approvedPlanText = await resolveInlineOrFile({
+            inline: args.approved_plan,
+            file: args.approved_plan_file,
+            scope,
+            label: 'approved_plan',
+          });
+        } catch (readErr: unknown) {
+          const reason = readErr instanceof Error ? readErr.message : String(readErr);
+          console.error(`[duul] code-review file read failed: ${reason}`);
+          return {
+            content: [{ type: 'text' as const, text: `ERROR: could not read a *_file argument. ${reason}` }],
+            isError: true,
+          };
+        }
+
         if (
-          !args ||
-          typeof args.code !== 'string' ||
-          args.code.trim().length < 5 ||
-          typeof args.approved_plan !== 'string' ||
-          args.approved_plan.trim().length < 20
+          typeof codeText !== 'string' ||
+          codeText.trim().length < 5 ||
+          typeof approvedPlanText !== 'string' ||
+          approvedPlanText.trim().length < 20
         ) {
           const message =
-            'ERROR: `code` and `approved_plan` fields are both required. ' +
+            'ERROR: `code` and `approved_plan` are both required. ' +
             '`code` must contain the actual code being reviewed (min 5 chars). ' +
             '`approved_plan` must contain the full plan text approved in Phase 1 (min 20 chars). ' +
-            'You called request_code_review with missing or empty content. ' +
-            'Retry with: { "code": "<your code>", "approved_plan": "<plan text>", "workspace_root": "<absolute path>", "iteration_count": 1 }. ' +
+            'You called request_code_review without usable content. ' +
+            'Inline them — { "code": "<your code>", "approved_plan": "<plan text>", ... } — or, for large content, ' +
+            'write each to a file and pass { "code_file": ".duul/code.md", "approved_plan_file": ".duul/plan.md", "workspace_root": "<absolute path>" }. ' +
             'Do NOT call this tool again with an empty input.';
-          console.error(`[duul] code-review rejected: missing/empty code or approved_plan field`);
+          console.error(`[duul] code-review rejected: missing/empty code or approved_plan content`);
           return {
             content: [{ type: 'text' as const, text: message }],
             isError: true,
@@ -93,8 +116,6 @@ export function registerCodeReviewTool(server: McpServer): void {
           };
         }
 
-        const scope = resolveWorkspaceScope(args);
-
         // Auto-generate git diff if not provided
         let gitDiff = args.git_diff;
         if (!gitDiff && scope?.root && args.changed_files?.length) {
@@ -112,8 +133,8 @@ export function registerCodeReviewTool(server: McpServer): void {
 
         const systemPrompt = getCodeReviewSystemPrompt();
         const userMessage = formatCodeReviewUserMessage(
-          args.code,
-          args.approved_plan,
+          codeText,
+          approvedPlanText,
           args.file_path,
           args.dependencies,
           args.relevant_code,

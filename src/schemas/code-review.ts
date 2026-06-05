@@ -15,18 +15,35 @@ export const DependenciesSchema = z.object({
 export const CodeReviewInputSchema = z.object({
   code: z
     .string()
-    .min(1, 'code must not be empty')
+    .optional()
     .describe(
-      'REQUIRED. The full code being reviewed (markdown code block or raw source). Must NOT be omitted or empty. ' +
+      'The full code being reviewed (markdown code block or raw source). REQUIRED unless code_file is provided. ' +
         'For multi-file diffs, concatenate all changed code with file headers. ' +
-        'Pass actual code content here — never call this tool with an empty object.',
+        'If the code is large, prefer code_file — inlining a very large code string here can make the tool call fail to serialize.',
+    ),
+  code_file: z
+    .string()
+    .optional()
+    .describe(
+      'Relative path (within workspace_root) to a file containing the full code being reviewed, ' +
+        'e.g. ".duul/code.md". Use this instead of inlining `code` when the content is large: ' +
+        'write it to the file first, then pass its path here. ' +
+        'Exactly one of `code` or `code_file` is required. Requires workspace_root. Must be a relative path.',
     ),
   approved_plan: z
     .string()
-    .min(1, 'approved_plan must not be empty')
+    .optional()
     .describe(
-      'REQUIRED. Full text of the plan approved in Phase 1. Must NOT be omitted. ' +
+      'Full text of the plan approved in Phase 1. REQUIRED unless approved_plan_file is provided. ' +
         'Pass the entire approved plan content (markdown) so the reviewer can verify the code matches it.',
+    ),
+  approved_plan_file: z
+    .string()
+    .optional()
+    .describe(
+      'Relative path (within workspace_root) to a markdown file containing the approved plan, ' +
+        'e.g. ".duul/plan.md". Use this instead of inlining `approved_plan` when it is large. ' +
+        'Exactly one of `approved_plan` or `approved_plan_file` is required. Requires workspace_root. Must be a relative path.',
     ),
   file_path: z.string().optional().describe('File path for contextual feedback'),
   dependencies: DependenciesSchema.optional().describe('Related library version info'),
