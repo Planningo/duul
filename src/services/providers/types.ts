@@ -62,8 +62,14 @@ export interface ProviderCapabilities {
   structuredOutputs: boolean;
   /** Supports tool/function calling */
   toolCalling: boolean;
-  /** Supports previous_response_id for conversation continuity */
+  /** Supports conversation continuity across rounds (native chaining or replay) */
   previousResponseId: boolean;
+  /**
+   * Continuity is achieved by replaying prior turns (conversationHistory) rather
+   * than native server-side chaining. When true, the reviewer stores/loads
+   * conversation turns per reviewId and passes them back on the next round.
+   */
+  conversationReplay: boolean;
   /** Supports strict JSON schema mode */
   jsonSchemaStrict: boolean;
 }

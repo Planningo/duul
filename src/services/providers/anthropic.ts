@@ -190,6 +190,7 @@ export class AnthropicProvider implements ReviewerProvider {
     structuredOutputs: false,
     toolCalling: true,
     previousResponseId: true, // simulated via conversation history
+    conversationReplay: true,
     jsonSchemaStrict: false,
   };
 

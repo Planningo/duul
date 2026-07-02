@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import type { z } from 'zod';
 import { validateProjectRoot } from '../filesystem.js';
+import { CHATGPT_BASE_URL } from './codex-auth.js';
 import { executeFilesystemTool, createReviewerByteBudget } from '../filesystem-tools.js';
 import type {
   ReviewerProvider,
@@ -10,6 +12,7 @@ import type {
   ProviderCapabilities,
   ExhaustionReason,
   TokenUsage,
+  ConversationTurn,
 } from './types.js';
 import { estimateCost } from '../pricing.js';
 
@@ -187,38 +190,83 @@ function validateInputLength(systemPrompt: string, userMessage: string): void {
   }
 }
 
+/**
+ * ChatGPT-login (Codex CLI) credentials. When present the provider talks to the
+ * ChatGPT backend Responses endpoint with a bearer token instead of an API key.
+ */
+export interface ChatgptAuth {
+  accessToken: string;
+  accountId: string;
+  /** Rotate the token (e.g. after a 401). Returns a fresh access token. */
+  refresh?: () => Promise<string>;
+}
+
 export class OpenAIProvider implements ReviewerProvider {
   readonly name = 'openai';
-  readonly capabilities: ProviderCapabilities = {
-    structuredOutputs: true,
-    toolCalling: true,
-    previousResponseId: true,
-    jsonSchemaStrict: true,
-  };
+  readonly capabilities: ProviderCapabilities;
 
   private client: OpenAI;
   private model: string;
   private temperature: number;
   private topP: number;
 
-  constructor(config?: { apiKey?: string; baseUrl?: string; model?: string; temperature?: number; topP?: number }) {
-    const apiKey = config?.apiKey ?? process.env.OPENAI_API_KEY;
+  /**
+   * ChatGPT-backend mode. The endpoint is stateless (`store: false`): it does
+   * not support `previous_response_id`, `temperature`/`top_p`, or
+   * `max_output_tokens`, and it streams. We resend the full input each turn.
+   */
+  private readonly stateless: boolean;
+  private readonly baseURL?: string;
+  private readonly defaultHeaders?: Record<string, string>;
+  private readonly refresh?: () => Promise<string>;
+  private readonly reasoningEffort: string;
+
+  constructor(config?: { apiKey?: string; baseUrl?: string; model?: string; temperature?: number; topP?: number; chatgpt?: ChatgptAuth }) {
+    const chatgpt = config?.chatgpt;
+    this.stateless = !!chatgpt;
+    this.refresh = chatgpt?.refresh;
+    this.reasoningEffort = process.env.DUUL_REASONING_EFFORT ?? 'medium';
+
+    const apiKey = chatgpt?.accessToken ?? config?.apiKey ?? process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY environment variable is not set');
+      throw new Error(
+        'No OpenAI credential found. Set OPENAI_API_KEY, or sign in with the Codex CLI (`codex login`).',
+      );
     }
-    this.client = new OpenAI({
-      apiKey,
-      ...(config?.baseUrl ? { baseURL: config.baseUrl } : {}),
-    });
+
+    this.baseURL = chatgpt ? CHATGPT_BASE_URL : config?.baseUrl;
+    this.defaultHeaders = chatgpt
+      ? { 'chatgpt-account-id': chatgpt.accountId, originator: 'codex_cli_rs', 'session-id': randomUUID() }
+      : undefined;
+    this.client = this.buildClient(apiKey);
+
     this.model = config?.model ?? process.env.REVIEW_MODEL ?? 'gpt-5.4';
     this.temperature = config?.temperature ?? 0.2;
     this.topP = config?.topP ?? 0.1;
+    this.capabilities = {
+      structuredOutputs: true,
+      toolCalling: true,
+      // Both modes support cross-round continuity: api-key mode natively via
+      // previous_response_id, ChatGPT mode by replaying conversation turns.
+      previousResponseId: true,
+      // ChatGPT backend is stateless — continuity comes from turn replay.
+      conversationReplay: this.stateless,
+      jsonSchemaStrict: true,
+    };
+  }
+
+  private buildClient(apiKey: string): OpenAI {
+    return new OpenAI({
+      apiKey,
+      ...(this.baseURL ? { baseURL: this.baseURL } : {}),
+      ...(this.defaultHeaders ? { defaultHeaders: this.defaultHeaders } : {}),
+    });
   }
 
   async review<T extends z.ZodType>(
     options: ReviewCallOptions<T>,
   ): Promise<ReviewCallResult<z.infer<T>>> {
-    const { systemPrompt, userMessage, schemaName, outputSchema, workspaceScope, previousReviewId } = options;
+    const { systemPrompt, userMessage, schemaName, outputSchema, workspaceScope, previousReviewId, conversationHistory } = options;
 
     validateInputLength(systemPrompt, userMessage);
 
@@ -260,21 +308,53 @@ export class OpenAIProvider implements ReviewerProvider {
     const baseParams: Record<string, unknown> = {
       model: this.model,
       instructions: systemPrompt,
-      temperature: this.temperature,
-      top_p: this.topP,
-      max_output_tokens: 16384,
       text: { format: zodTextFormat(outputSchema, schemaName) },
       ...(tools ? { tools } : {}),
+      ...(this.stateless
+        ? {
+            // ChatGPT backend: stateless, reasoning-only sampling, encrypted
+            // reasoning must be echoed back on each turn (store: false).
+            store: false,
+            reasoning: { effort: this.reasoningEffort },
+            include: ['reasoning.encrypted_content'],
+          }
+        : {
+            temperature: this.temperature,
+            top_p: this.topP,
+            max_output_tokens: 16384,
+          }),
     };
 
-    let response = await this.apiCallWithRetry({
-      ...baseParams,
-      input: [{ role: 'user' as const, content: [{ type: 'input_text' as const, text: userMessage }] }],
-      ...(previousReviewId ? { previous_response_id: previousReviewId } : {}),
-    });
+    // Stateless (ChatGPT backend): accumulate the full input across tool rounds
+    // since there is no server-side `previous_response_id` chaining. Prior rounds
+    // are replayed as message items (user: input_text, assistant: output_text).
+    const inputItems: unknown[] = [];
+    if (this.stateless && conversationHistory?.length) {
+      inputItems.push(...(conversationHistory as unknown[]));
+    }
+    inputItems.push({ role: 'user' as const, content: [{ type: 'input_text' as const, text: userMessage }] });
+
+    let response = this.stateless
+      ? await this.apiCallWithRetry({ ...baseParams, input: inputItems })
+      : await this.apiCallWithRetry({
+          ...baseParams,
+          input: inputItems,
+          ...(previousReviewId ? { previous_response_id: previousReviewId } : {}),
+        });
 
     accumulateUsage(response);
     console.error(`[duul] response.id=${response.id} model=${this.model} provider=openai`);
+
+    // Continue the conversation after a tool round. Stateless mode resends the
+    // whole input (prior assistant output items + the new tool outputs); chained
+    // mode uses server-side previous_response_id and sends only the new items.
+    const continueConversation = async (newItems: unknown[]): Promise<OpenAI.Responses.Response> => {
+      if (this.stateless) {
+        inputItems.push(...response.output, ...newItems);
+        return this.apiCallWithRetry({ ...baseParams, input: inputItems });
+      }
+      return this.apiCallWithRetry({ ...baseParams, previous_response_id: response.id, input: newItems });
+    };
 
     // Agentic tool-calling loop
     if (effectiveRoot) {
@@ -353,7 +433,7 @@ export class OpenAIProvider implements ReviewerProvider {
           toolResults.push({ type: 'function_call_output' as const, call_id: call.call_id, output: result });
         }
 
-        response = await this.apiCallWithRetry({ ...baseParams, previous_response_id: response.id, input: toolResults });
+        response = await continueConversation(toolResults);
         accumulateUsage(response);
         console.error(`[duul] response.id=${response.id} (after tool round ${round + 1})`);
 
@@ -362,7 +442,7 @@ export class OpenAIProvider implements ReviewerProvider {
             type: 'function_call_output' as const, call_id: c.call_id,
             output: 'No more file reads allowed. You must produce your final review verdict now.',
           }));
-          response = await this.apiCallWithRetry({ ...baseParams, previous_response_id: response.id, input: stopResults });
+          response = await continueConversation(stopResults);
           accumulateUsage(response);
           break;
         }
@@ -374,7 +454,7 @@ export class OpenAIProvider implements ReviewerProvider {
           type: 'function_call_output' as const, call_id: c.call_id,
           output: 'Tool call limit reached. You must produce your final review verdict now.',
         }));
-        response = await this.apiCallWithRetry({ ...baseParams, previous_response_id: response.id, input: stopResults });
+        response = await continueConversation(stopResults);
         accumulateUsage(response);
       }
     }
@@ -384,36 +464,78 @@ export class OpenAIProvider implements ReviewerProvider {
     const cachedStr = usage.cached_input_tokens ? ` [cached: ${usage.cached_input_tokens}]` : '';
     console.error(`[duul] Token usage: ${usage.input_tokens} in + ${usage.output_tokens} out = ${usage.total_tokens} total (${usage.api_calls} API calls)${cachedStr}${costStr}`);
 
+    // Stateless mode: record this round's user/assistant turns so the reviewer
+    // can replay them next round (the ChatGPT backend has no native chaining).
+    // Only the final Q&A is kept — replaying every tool call would bloat tokens
+    // and risks stale encrypted-reasoning items across separate responses.
+    const buildTurns = (assistantText: string): ConversationTurn[] | undefined =>
+      this.stateless
+        ? [
+            ...(conversationHistory ?? []),
+            { role: 'user' as const, content: [{ type: 'input_text', text: userMessage }] },
+            { role: 'assistant' as const, content: [{ type: 'output_text', text: assistantText }] },
+          ]
+        : undefined;
+
     // Extract structured output
+    const outputText = this.getOutputText(response);
     const parsed = this.extractStructuredOutput(response, outputSchema);
     if (parsed !== null) {
-      return { parsed, reviewId: response.id, usage };
+      return { parsed, reviewId: response.id, usage, conversationTurns: buildTurns(outputText ?? '') };
     }
 
     if (options.createFallback) {
       const reason: ExhaustionReason = this.hasPendingFunctionCalls(response) ? 'round_limit' : 'budget';
       const fallback = options.createFallback(reason, allUsedTools);
       console.error(`[duul] Returning structured fallback (reason: ${reason}).`);
-      return { parsed: fallback, reviewId: response.id, usage };
+      return { parsed: fallback, reviewId: response.id, usage, conversationTurns: buildTurns(outputText ?? JSON.stringify(fallback)) };
     }
 
     throw new Error('Review failed: could not obtain structured verdict after tool loop.');
   }
 
   private async apiCallWithRetry(params: Record<string, unknown>): Promise<OpenAI.Responses.Response> {
+    let refreshedOnce = false;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 120_000);
       try {
-        const response = await this.client.responses.create(
-          { ...params, stream: false } as Parameters<typeof this.client.responses.create>[0],
-          { signal: controller.signal },
-        ) as OpenAI.Responses.Response;
+        let response: OpenAI.Responses.Response;
+        if (this.stateless) {
+          // ChatGPT backend requires streaming and leaves `response.completed`'s
+          // `output` empty — aggregate items from the streamed events instead.
+          const stream = this.client.responses.stream(
+            params as Parameters<typeof this.client.responses.stream>[0],
+            { signal: controller.signal },
+          );
+          response = await this.aggregateStream(stream);
+        } else {
+          response = (await this.client.responses.create(
+            { ...params, stream: false } as Parameters<typeof this.client.responses.create>[0],
+            { signal: controller.signal },
+          )) as OpenAI.Responses.Response;
+        }
         clearTimeout(timeout);
         return response;
       } catch (error: unknown) {
         clearTimeout(timeout);
-        const isRetryable = error instanceof Error && ('status' in error ? ((error as { status: number }).status === 429 || (error as { status: number }).status >= 500) : error.name === 'AbortError');
+        const status = error instanceof Error && 'status' in error ? (error as { status: number }).status : undefined;
+
+        // ChatGPT token expired mid-review: refresh once and retry immediately.
+        if (status === 401 && this.refresh && !refreshedOnce) {
+          refreshedOnce = true;
+          try {
+            const token = await this.refresh();
+            this.client = this.buildClient(token);
+            console.error('[duul] Refreshed Codex token after 401, retrying');
+            attempt--; // don't consume a retry for the refresh
+            continue;
+          } catch (refreshError) {
+            console.error(`[duul] Codex token refresh failed: ${refreshError instanceof Error ? refreshError.message : refreshError}`);
+          }
+        }
+
+        const isRetryable = error instanceof Error && (status !== undefined ? (status === 429 || status >= 500) : error.name === 'AbortError');
         if (isRetryable && attempt < MAX_RETRIES - 1) {
           const delay = 1000 * Math.pow(2, attempt);
           console.error(`[duul] Retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms`);
@@ -424,6 +546,58 @@ export class OpenAIProvider implements ReviewerProvider {
       }
     }
     throw new Error('Unreachable: exhausted retries');
+  }
+
+  /**
+   * Aggregate a streamed Responses call into a Response object.
+   *
+   * The ChatGPT backend delivers completed output items via
+   * `response.output_item.done` events and returns an EMPTY `output` array on
+   * `response.completed`, so we collect items from the stream ourselves. Usage
+   * and id come from `response.completed` (falling back to `response.created`).
+   */
+  private async aggregateStream(
+    stream: AsyncIterable<OpenAI.Responses.ResponseStreamEvent>,
+  ): Promise<OpenAI.Responses.Response> {
+    const output: OpenAI.Responses.ResponseOutputItem[] = [];
+    let id = '';
+    let usage: OpenAI.Responses.ResponseUsage | undefined;
+
+    for await (const event of stream) {
+      switch (event.type) {
+        case 'response.created':
+          id = event.response.id;
+          break;
+        case 'response.output_item.done':
+          output.push(event.item);
+          break;
+        case 'response.completed':
+          id = event.response.id ?? id;
+          usage = event.response.usage;
+          break;
+        case 'response.failed':
+          throw new Error(`ChatGPT backend response failed: ${event.response.error?.message ?? 'unknown error'}`);
+        case 'error':
+          throw new Error(`ChatGPT backend stream error: ${event.message ?? 'unknown error'}`);
+        default:
+          break;
+      }
+    }
+
+    return { id, output, usage } as unknown as OpenAI.Responses.Response;
+  }
+
+  /** Return the first output_text string in the response, or null. */
+  private getOutputText(response: OpenAI.Responses.Response): string | null {
+    for (const item of response.output) {
+      if (item.type === 'message' && 'content' in item) {
+        const msg = item as { content: Array<{ type: string; text?: string }> };
+        for (const content of msg.content) {
+          if (content.type === 'output_text' && content.text) return content.text;
+        }
+      }
+    }
+    return null;
   }
 
   private extractStructuredOutput<T extends z.ZodType>(response: OpenAI.Responses.Response, outputSchema: T): z.infer<T> | null {

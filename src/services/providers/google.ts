@@ -158,6 +158,7 @@ export class GoogleProvider implements ReviewerProvider {
     structuredOutputs: false,
     toolCalling: true,
     previousResponseId: false,
+    conversationReplay: false,
     jsonSchemaStrict: false,
   };
 
