@@ -189,7 +189,8 @@ export class AnthropicProvider implements ReviewerProvider {
   readonly capabilities: ProviderCapabilities = {
     structuredOutputs: false,
     toolCalling: true,
-    previousResponseId: true, // simulated via conversation history
+    previousResponseId: false, // no native chaining — continuity via replay
+    conversationReplay: true,
     jsonSchemaStrict: false,
   };
 

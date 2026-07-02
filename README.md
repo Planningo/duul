@@ -120,16 +120,42 @@ All configuration is done via environment variables, passed through the MCP `env
 |----------|----------|---------|-------------|
 | `REVIEW_PROVIDER` | No | `openai` | Provider: `openai`, `anthropic`, `google`, `openrouter`, `compatible` |
 | `REVIEW_MODEL` | No | Provider default | Model ID (e.g. `gpt-5.4`, `claude-opus-4-20250514`, `gemini-3.1-pro-preview`) |
-| `OPENAI_API_KEY` | Conditional | -- | Required for `openai` or `compatible` provider |
+| `OPENAI_API_KEY` | Conditional | -- | API key for `openai`/`compatible`. Optional if signed in with the Codex CLI (see below) |
 | `ANTHROPIC_API_KEY` | Conditional | -- | Required for `anthropic` provider |
 | `GOOGLE_API_KEY` | Conditional | -- | Required for `google` provider |
 | `OPENROUTER_API_KEY` | Conditional | -- | Required for `openrouter` provider |
 | `REVIEW_API_KEY` | No | -- | API key for `compatible` provider (falls back to `OPENAI_API_KEY`) |
+| `CODEX_HOME` | No | `~/.codex` | Directory holding the Codex CLI `auth.json` (for CLI login) |
+| `DUUL_REASONING_EFFORT` | No | `medium` | Reasoning effort for Sign in with ChatGPT (`minimal`\|`low`\|`medium`\|`high`) |
 
 Default models per provider:
 - **OpenAI:** `gpt-5.4`
 - **Anthropic:** `claude-opus-4-20250514`
 - **Google:** `gemini-3.1-pro-preview`
+
+#### Sign in with the Codex CLI (no API key)
+
+For the `openai` provider you don't need an `OPENAI_API_KEY` if you're already
+logged in to the [OpenAI Codex CLI](https://developers.openai.com/codex):
+
+```bash
+codex login   # "Sign in with ChatGPT" (Plus/Pro/Team) — or paste an API key
+```
+
+DUUL reads `~/.codex/auth.json` (override with `CODEX_HOME`) and:
+
+- **Sign in with ChatGPT:** uses your OAuth token against the ChatGPT backend
+  (`https://chatgpt.com/backend-api/codex`). Requests are billed to your ChatGPT
+  plan, not per-token. Expired tokens are refreshed automatically.
+- **API-key login:** uses the `OPENAI_API_KEY` stored in `auth.json`.
+
+Precedence: an explicit `OPENAI_API_KEY` env var (or per-request `api_key`) always
+wins; the Codex login is only used as a fallback when no key is set. Models are
+limited to those your ChatGPT plan exposes (e.g. `gpt-5.4`, `gpt-5.5`); set
+`REVIEW_MODEL` to pick one. The ChatGPT backend is stateless, so instead of
+native `previous_response_id` chaining DUUL preserves cross-round context by
+replaying prior rounds' turns (the same mechanism the Anthropic provider uses) —
+`previous_review_id` continuity works as usual.
 
 #### Iteration Limits
 
@@ -484,7 +510,7 @@ When `workspace_root` is provided, the reviewer gains access to 7 file explorati
 **Degradation behavior:**
 - **No structured outputs:** JSON prompting + zod validation fallback.
 - **No tool calling:** Reviewer cannot explore the workspace. Provide more context via `relevant_code` and `artifact_refs`.
-- **No previous response ID:** Each review call is independent (no conversation memory).
+- **No previous response ID:** Native server-side chaining is unavailable. Anthropic and the OpenAI ChatGPT-login backend still preserve cross-round context by replaying prior turns (conversation replay); Google is independent per call.
 
 ---
 

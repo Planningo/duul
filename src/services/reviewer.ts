@@ -7,9 +7,10 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import type { WorkspaceScope } from './filesystem.js';
 import type { ReviewerProvider, ReviewCallResult, ExhaustionReason, TokenUsage, ConversationTurn } from './providers/types.js';
-import { OpenAIProvider } from './providers/openai.js';
+import { OpenAIProvider, type ChatgptAuth } from './providers/openai.js';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { GoogleProvider } from './providers/google.js';
+import { resolveCodexCredential } from './providers/codex-auth.js';
 
 export type { ReviewerProvider, ReviewCallResult, ExhaustionReason, TokenUsage };
 
@@ -121,16 +122,38 @@ function getProviderCacheKey(
 }
 
 /**
+ * Resolve the OpenAI credential, falling back to the Codex CLI login when no
+ * explicit or env API key is present. Returns either an API key or a ChatGPT
+ * bearer credential (Sign in with ChatGPT).
+ */
+async function resolveOpenAiCredential(
+  configApiKey: string | undefined,
+): Promise<{ apiKey?: string; chatgpt?: ChatgptAuth }> {
+  const explicitKey = configApiKey ?? process.env.OPENAI_API_KEY;
+  if (explicitKey) return { apiKey: explicitKey };
+
+  const cred = await resolveCodexCredential();
+  if (!cred) return {}; // let the provider throw its standard "no credential" error
+
+  if (cred.mode === 'apikey') {
+    console.error('[duul] Using OpenAI API key from Codex CLI login (~/.codex/auth.json)');
+    return { apiKey: cred.apiKey };
+  }
+  console.error('[duul] Using Sign in with ChatGPT credentials from Codex CLI login');
+  return { chatgpt: { accessToken: cred.accessToken, accountId: cred.accountId, refresh: cred.refresh } };
+}
+
+/**
  * Create or retrieve a cached provider instance.
  *
  * `toolName` lets callers use the per-tool model override form:
  * `{ plan: "...", code: "...", partition: "..." }`. The resolved model
  * participates in the cache key so per-tool models don't collide.
  */
-function getProvider(
+async function getProvider(
   reviewerConfig?: ReviewOptions<z.ZodType>['reviewerConfig'],
   toolName?: ReviewToolName,
-): ReviewerProvider {
+): Promise<ReviewerProvider> {
   const providerName = resolveProviderName(reviewerConfig?.provider);
   const hasEphemeralKey = !!reviewerConfig?.api_key;
   const resolvedModel = resolveModelForTool(reviewerConfig?.model, toolName);
@@ -153,11 +176,16 @@ function getProvider(
   };
 
   let provider: ReviewerProvider;
+  // ChatGPT-login providers hold a rotating bearer token — never cache them.
+  let bypassCache = hasEphemeralKey;
 
   switch (providerName) {
-    case 'openai':
-      provider = new OpenAIProvider(constructorConfig);
+    case 'openai': {
+      const cred = await resolveOpenAiCredential(reviewerConfig?.api_key);
+      if (cred.chatgpt) bypassCache = true;
+      provider = new OpenAIProvider({ ...constructorConfig, apiKey: cred.apiKey ?? apiKey, chatgpt: cred.chatgpt });
       break;
+    }
     case 'anthropic':
       provider = new AnthropicProvider(constructorConfig);
       break;
@@ -180,8 +208,8 @@ function getProvider(
       throw new Error(`Unknown provider: ${providerName}`);
   }
 
-  // Only cache env-based providers (not ephemeral per-request keys)
-  if (!hasEphemeralKey) {
+  // Only cache stable env-based providers (not ephemeral keys or rotating tokens)
+  if (!bypassCache) {
     // Evict oldest entry if cache is full
     if (providerCache.size >= MAX_CACHE_SIZE) {
       const oldestKey = providerCache.keys().next().value!;
@@ -192,7 +220,7 @@ function getProvider(
     providerCache.set(cacheKey, provider);
   }
 
-  console.error(`[duul] Created ${providerName} provider (model: ${resolvedModel ?? 'default'}${toolName ? `, tool: ${toolName}` : ''}${hasEphemeralKey ? ', ephemeral key' : ''})`);
+  console.error(`[duul] Created ${providerName} provider (model: ${resolvedModel ?? 'default'}${toolName ? `, tool: ${toolName}` : ''}${bypassCache ? ', uncached' : ''})`);
   return provider;
 }
 
@@ -222,6 +250,11 @@ function conversationsPath(workspaceRoot: string): string {
 
 async function loadFromDisk(workspaceRoot: string): Promise<void> {
   if (diskLoaded && lastWorkspaceRoot === workspaceRoot) return;
+  // Switching workspaces: drop the previous workspace's entries so they aren't
+  // flushed into (or replayed from) the new workspace's conversations file.
+  if (lastWorkspaceRoot !== null && lastWorkspaceRoot !== workspaceRoot) {
+    memoryCache.clear();
+  }
   lastWorkspaceRoot = workspaceRoot;
   diskLoaded = true;
 
@@ -270,7 +303,33 @@ function evictOldest(): void {
   }
 }
 
-async function getConversationHistory(reviewId: string, workspaceRoot?: string): Promise<ConversationTurn[] | undefined> {
+/**
+ * Decide how to handle cross-round continuity for a provider, given whether the
+ * caller supplied a previousReviewId. Pure function so it can be unit-tested.
+ *
+ * - `shouldLoad`: replay-based providers need prior turns loaded and passed in.
+ * - `shouldWarn`: the caller asked for continuity but the provider supports
+ *   neither native chaining nor replay, so context will be lost.
+ */
+export function continuityPlan(
+  capabilities: { previousResponseId: boolean; conversationReplay: boolean },
+  hasPreviousReviewId: boolean,
+): { shouldLoad: boolean; shouldWarn: boolean } {
+  if (!hasPreviousReviewId) return { shouldLoad: false, shouldWarn: false };
+  return {
+    shouldLoad: capabilities.conversationReplay,
+    shouldWarn: !capabilities.previousResponseId && !capabilities.conversationReplay,
+  };
+}
+
+/** Reset the in-memory conversation store. Test-only. */
+export function __resetConversationStoreForTest(): void {
+  memoryCache.clear();
+  diskLoaded = false;
+  lastWorkspaceRoot = null;
+}
+
+export async function getConversationHistory(reviewId: string, workspaceRoot?: string): Promise<ConversationTurn[] | undefined> {
   if (workspaceRoot) await loadFromDisk(workspaceRoot);
   const entry = memoryCache.get(reviewId);
   if (!entry) return undefined;
@@ -278,7 +337,7 @@ async function getConversationHistory(reviewId: string, workspaceRoot?: string):
   return entry.turns;
 }
 
-async function storeConversation(reviewId: string, turns: ConversationTurn[], workspaceRoot?: string): Promise<void> {
+export async function storeConversation(reviewId: string, turns: ConversationTurn[], workspaceRoot?: string): Promise<void> {
   evictOldest();
   memoryCache.set(reviewId, { turns, lastAccessed: Date.now() });
   if (workspaceRoot) {
@@ -293,7 +352,7 @@ async function storeConversation(reviewId: string, turns: ConversationTurn[], wo
 export async function callReview<T extends z.ZodType>(
   options: ReviewOptions<T>,
 ): Promise<ReviewCallResult<z.infer<T>>> {
-  const provider = getProvider(options.reviewerConfig, options.toolName);
+  const provider = await getProvider(options.reviewerConfig, options.toolName);
 
   // Log capability warnings for non-full-featured providers
   if (!provider.capabilities.toolCalling && options.workspaceScope?.root) {
@@ -302,20 +361,22 @@ export async function callReview<T extends z.ZodType>(
         'Reviewer will not be able to explore the workspace. Consider providing more context via relevant_code/artifact_refs.',
     );
   }
-  if (!provider.capabilities.previousResponseId && options.previousReviewId) {
+  const plan = continuityPlan(provider.capabilities, !!options.previousReviewId);
+  if (plan.shouldWarn) {
     console.error(
-      `[duul] Warning: ${provider.name} provider does not support previous_response_id. ` +
+      `[duul] Warning: ${provider.name} provider does not support conversation continuity. ` +
         'Reviewer context from previous rounds will not be available.',
     );
   }
 
   const workspaceRoot = options.workspaceScope?.root;
 
-  // Retrieve conversation history for providers that use simulated context
-  // OpenAI uses native previous_response_id, so skip for it
+  // Retrieve conversation history for replay-based providers (Anthropic, and the
+  // OpenAI ChatGPT-login backend). Native-chaining providers (OpenAI api-key)
+  // pass previousReviewId straight through and don't need replay.
   let conversationHistory: ConversationTurn[] | undefined;
-  if (options.previousReviewId && provider.capabilities.previousResponseId && provider.name !== 'openai') {
-    conversationHistory = await getConversationHistory(options.previousReviewId, workspaceRoot);
+  if (plan.shouldLoad) {
+    conversationHistory = await getConversationHistory(options.previousReviewId!, workspaceRoot);
     if (conversationHistory) {
       console.error(`[duul] Loaded conversation history for ${options.previousReviewId} (${conversationHistory.length} turns)`);
     } else {
@@ -325,8 +386,8 @@ export async function callReview<T extends z.ZodType>(
 
   const result = await provider.review({ ...options, conversationHistory });
 
-  // Store conversation turns for future rounds (non-OpenAI providers)
-  if (result.conversationTurns?.length && provider.name !== 'openai') {
+  // Store conversation turns for future rounds (replay-based providers only)
+  if (result.conversationTurns?.length && provider.capabilities.conversationReplay) {
     await storeConversation(result.reviewId, result.conversationTurns, workspaceRoot);
     console.error(`[duul] Stored conversation (${result.conversationTurns.length} turns) for ${result.reviewId}`);
   }

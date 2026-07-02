@@ -120,16 +120,41 @@ npm run build
 |------|------|--------|------|
 | `REVIEW_PROVIDER` | 아니오 | `openai` | 프로바이더: `openai`, `anthropic`, `google`, `openrouter`, `compatible` |
 | `REVIEW_MODEL` | 아니오 | 프로바이더 기본값 | 모델 ID (예: `gpt-5.4`, `claude-opus-4-20250514`, `gemini-3.1-pro-preview`) |
-| `OPENAI_API_KEY` | 조건부 | -- | `openai` 또는 `compatible` 프로바이더 사용 시 필수 |
+| `OPENAI_API_KEY` | 조건부 | -- | `openai`/`compatible`용 API 키. Codex CLI 로그인 시 생략 가능 (아래 참고) |
 | `ANTHROPIC_API_KEY` | 조건부 | -- | `anthropic` 프로바이더 사용 시 필수 |
 | `GOOGLE_API_KEY` | 조건부 | -- | `google` 프로바이더 사용 시 필수 |
 | `OPENROUTER_API_KEY` | 조건부 | -- | `openrouter` 프로바이더 사용 시 필수 |
 | `REVIEW_API_KEY` | 아니오 | -- | `compatible` 프로바이더용 API 키 (`OPENAI_API_KEY`로 폴백) |
+| `CODEX_HOME` | 아니오 | `~/.codex` | Codex CLI `auth.json` 위치 (CLI 로그인용) |
+| `DUUL_REASONING_EFFORT` | 아니오 | `medium` | ChatGPT 로그인 시 추론 강도 (`minimal`\|`low`\|`medium`\|`high`) |
 
 프로바이더별 기본 모델:
 - **OpenAI:** `gpt-5.4`
 - **Anthropic:** `claude-opus-4-20250514`
 - **Google:** `gemini-3.1-pro-preview`
+
+#### Codex CLI 로그인 사용 (API 키 불필요)
+
+`openai` 프로바이더는 [OpenAI Codex CLI](https://developers.openai.com/codex)에
+이미 로그인되어 있으면 `OPENAI_API_KEY` 없이도 동작합니다:
+
+```bash
+codex login   # "Sign in with ChatGPT" (Plus/Pro/Team) 또는 API 키 입력
+```
+
+DUUL은 `~/.codex/auth.json`을 읽고(`CODEX_HOME`으로 경로 변경 가능):
+
+- **Sign in with ChatGPT:** OAuth 토큰으로 ChatGPT 백엔드
+  (`https://chatgpt.com/backend-api/codex`)를 호출합니다. 토큰당 과금이 아니라
+  ChatGPT 요금제로 청구되며, 만료된 토큰은 자동 갱신됩니다.
+- **API 키 로그인:** `auth.json`에 저장된 `OPENAI_API_KEY`를 사용합니다.
+
+우선순위: 명시적 `OPENAI_API_KEY` 환경변수(또는 요청별 `api_key`)가 항상 우선이며,
+키가 없을 때만 Codex 로그인으로 폴백합니다. 모델은 ChatGPT 요금제가 제공하는 것으로
+제한됩니다(예: `gpt-5.4`, `gpt-5.5`) — `REVIEW_MODEL`로 선택하세요. ChatGPT
+백엔드는 무상태(stateless)라 네이티브 `previous_response_id` 체이닝 대신, 이전
+라운드의 대화 턴을 재생(replay)해 라운드 간 컨텍스트를 유지합니다(Anthropic
+프로바이더와 동일한 방식) — `previous_review_id` 연속성이 정상 동작합니다.
 
 #### 반복 제한
 
