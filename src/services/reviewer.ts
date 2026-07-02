@@ -250,6 +250,11 @@ function conversationsPath(workspaceRoot: string): string {
 
 async function loadFromDisk(workspaceRoot: string): Promise<void> {
   if (diskLoaded && lastWorkspaceRoot === workspaceRoot) return;
+  // Switching workspaces: drop the previous workspace's entries so they aren't
+  // flushed into (or replayed from) the new workspace's conversations file.
+  if (lastWorkspaceRoot !== null && lastWorkspaceRoot !== workspaceRoot) {
+    memoryCache.clear();
+  }
   lastWorkspaceRoot = workspaceRoot;
   diskLoaded = true;
 
@@ -298,7 +303,33 @@ function evictOldest(): void {
   }
 }
 
-async function getConversationHistory(reviewId: string, workspaceRoot?: string): Promise<ConversationTurn[] | undefined> {
+/**
+ * Decide how to handle cross-round continuity for a provider, given whether the
+ * caller supplied a previousReviewId. Pure function so it can be unit-tested.
+ *
+ * - `shouldLoad`: replay-based providers need prior turns loaded and passed in.
+ * - `shouldWarn`: the caller asked for continuity but the provider supports
+ *   neither native chaining nor replay, so context will be lost.
+ */
+export function continuityPlan(
+  capabilities: { previousResponseId: boolean; conversationReplay: boolean },
+  hasPreviousReviewId: boolean,
+): { shouldLoad: boolean; shouldWarn: boolean } {
+  if (!hasPreviousReviewId) return { shouldLoad: false, shouldWarn: false };
+  return {
+    shouldLoad: capabilities.conversationReplay,
+    shouldWarn: !capabilities.previousResponseId && !capabilities.conversationReplay,
+  };
+}
+
+/** Reset the in-memory conversation store. Test-only. */
+export function __resetConversationStoreForTest(): void {
+  memoryCache.clear();
+  diskLoaded = false;
+  lastWorkspaceRoot = null;
+}
+
+export async function getConversationHistory(reviewId: string, workspaceRoot?: string): Promise<ConversationTurn[] | undefined> {
   if (workspaceRoot) await loadFromDisk(workspaceRoot);
   const entry = memoryCache.get(reviewId);
   if (!entry) return undefined;
@@ -306,7 +337,7 @@ async function getConversationHistory(reviewId: string, workspaceRoot?: string):
   return entry.turns;
 }
 
-async function storeConversation(reviewId: string, turns: ConversationTurn[], workspaceRoot?: string): Promise<void> {
+export async function storeConversation(reviewId: string, turns: ConversationTurn[], workspaceRoot?: string): Promise<void> {
   evictOldest();
   memoryCache.set(reviewId, { turns, lastAccessed: Date.now() });
   if (workspaceRoot) {
@@ -330,7 +361,8 @@ export async function callReview<T extends z.ZodType>(
         'Reviewer will not be able to explore the workspace. Consider providing more context via relevant_code/artifact_refs.',
     );
   }
-  if (!provider.capabilities.previousResponseId && !provider.capabilities.conversationReplay && options.previousReviewId) {
+  const plan = continuityPlan(provider.capabilities, !!options.previousReviewId);
+  if (plan.shouldWarn) {
     console.error(
       `[duul] Warning: ${provider.name} provider does not support conversation continuity. ` +
         'Reviewer context from previous rounds will not be available.',
@@ -343,8 +375,8 @@ export async function callReview<T extends z.ZodType>(
   // OpenAI ChatGPT-login backend). Native-chaining providers (OpenAI api-key)
   // pass previousReviewId straight through and don't need replay.
   let conversationHistory: ConversationTurn[] | undefined;
-  if (options.previousReviewId && provider.capabilities.conversationReplay) {
-    conversationHistory = await getConversationHistory(options.previousReviewId, workspaceRoot);
+  if (plan.shouldLoad) {
+    conversationHistory = await getConversationHistory(options.previousReviewId!, workspaceRoot);
     if (conversationHistory) {
       console.error(`[duul] Loaded conversation history for ${options.previousReviewId} (${conversationHistory.length} turns)`);
     } else {

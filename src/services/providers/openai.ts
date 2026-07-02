@@ -246,10 +246,9 @@ export class OpenAIProvider implements ReviewerProvider {
     this.capabilities = {
       structuredOutputs: true,
       toolCalling: true,
-      // Both modes support cross-round continuity: api-key mode natively via
-      // previous_response_id, ChatGPT mode by replaying conversation turns.
-      previousResponseId: true,
-      // ChatGPT backend is stateless — continuity comes from turn replay.
+      // Native server-side chaining is available only in api-key mode. The
+      // ChatGPT backend is stateless, so continuity there comes from turn replay.
+      previousResponseId: !this.stateless,
       conversationReplay: this.stateless,
       jsonSchemaStrict: true,
     };

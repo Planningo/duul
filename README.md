@@ -510,7 +510,7 @@ When `workspace_root` is provided, the reviewer gains access to 7 file explorati
 **Degradation behavior:**
 - **No structured outputs:** JSON prompting + zod validation fallback.
 - **No tool calling:** Reviewer cannot explore the workspace. Provide more context via `relevant_code` and `artifact_refs`.
-- **No previous response ID:** Each review call is independent (no conversation memory).
+- **No previous response ID:** Native server-side chaining is unavailable. Anthropic and the OpenAI ChatGPT-login backend still preserve cross-round context by replaying prior turns (conversation replay); Google is independent per call.
 
 ---
 

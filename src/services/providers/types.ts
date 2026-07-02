@@ -62,7 +62,7 @@ export interface ProviderCapabilities {
   structuredOutputs: boolean;
   /** Supports tool/function calling */
   toolCalling: boolean;
-  /** Supports conversation continuity across rounds (native chaining or replay) */
+  /** Supports NATIVE server-side conversation chaining via previous_response_id */
   previousResponseId: boolean;
   /**
    * Continuity is achieved by replaying prior turns (conversationHistory) rather

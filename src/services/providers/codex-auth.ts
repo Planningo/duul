@@ -15,7 +15,7 @@
  * Protocol constants mirror the openai/codex `codex-rs` client so DUUL speaks
  * the same dialect the CLI does.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -141,7 +141,12 @@ export async function refreshCodexToken(auth: CodexAuth): Promise<CodexAuth> {
   };
 
   try {
-    writeFileSync(authPath(), JSON.stringify(updated, null, 2), { mode: 0o600 });
+    const path = authPath();
+    writeFileSync(path, JSON.stringify(updated, null, 2), { mode: 0o600 });
+    // `mode` only applies when the file is created; force 0600 on overwrite so a
+    // pre-existing, loosely-permissioned auth.json can't keep the refreshed token
+    // world/group readable.
+    chmodSync(path, 0o600);
   } catch (error) {
     // Non-fatal: we can still use the refreshed token in-memory this run.
     console.error(`[duul] Warning: could not persist refreshed Codex token: ${error instanceof Error ? error.message : error}`);
@@ -167,9 +172,23 @@ export async function resolveCodexCredential(): Promise<CodexCredential | null> 
 
   if (preferChatgpt && chatgptCapable) {
     let accessToken = tokens!.access_token!;
-    if (isTokenExpired(accessToken) && tokens!.refresh_token) {
-      const refreshed = await refreshCodexToken(auth);
-      accessToken = refreshed.tokens?.access_token ?? accessToken;
+    if (isTokenExpired(accessToken)) {
+      // Token expired: refresh if possible, otherwise fall back to a stored API
+      // key rather than handing back a credential that will immediately 401.
+      if (tokens!.refresh_token) {
+        try {
+          const refreshed = await refreshCodexToken(auth);
+          accessToken = refreshed.tokens?.access_token ?? accessToken;
+        } catch (error) {
+          console.error(`[duul] Codex token refresh failed: ${error instanceof Error ? error.message : error}`);
+          if (auth.OPENAI_API_KEY) return { mode: 'apikey', apiKey: auth.OPENAI_API_KEY };
+          throw error;
+        }
+      } else if (auth.OPENAI_API_KEY) {
+        return { mode: 'apikey', apiKey: auth.OPENAI_API_KEY };
+      }
+      // else: no refresh path and no key — proceed with the expired token so the
+      // provider surfaces a clear auth error (better than a silent null).
     }
     return {
       mode: 'chatgpt',
