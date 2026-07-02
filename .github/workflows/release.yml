@@ -22,11 +22,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # No registry-url: it writes a placeholder _authToken into .npmrc that
+      # shadows OIDC. Trusted Publishing needs NO token in .npmrc.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
 
       # Trusted Publishing (OIDC) requires npm >= 11.5.1.
       - name: Upgrade npm
